@@ -1970,6 +1970,73 @@ If a future launch returns to menu with no new log, first check that
 `/mnt/mmc/roms/ports/dusklight.sh` still exists and is executable before
 debugging the binary.
 
+### Next planned pass: path 4 specialized native fast paths
+
+The current working renderer path is correct enough to run, but too slow. The
+next pass is to push "path 4": specialized native fast paths for common GX
+layouts, while keeping the generic CPU expansion as the correctness fallback.
+
+Important current finding:
+
+```text
+handle_draw() currently tries expand_portmaster_generic_draw() before the older
+specialized fast paths.
+```
+
+That means the older fast paths such as:
+
+```text
+can_expand_index16_pos_color()
+can_expand_direct_pos_tex()
+```
+
+are effectively bypassed whenever generic expansion succeeds. For PortMaster
+no-vertex-storage mode, the draw routing should be:
+
+```text
+1. Try known specialized native fast paths.
+2. Fall back to generic CPU expansion.
+3. Fall back to original storage-buffer path only when not in PortMaster mode.
+```
+
+The immediate offline work, before live hardware is available again:
+
+```text
+Add compact layout statistics keyed by primitive, vtx format, FIFO stride,
+and active GX_VA descriptors.
+
+Rate-limit logs so device testing can reveal:
+  - top draw layouts by draw count
+  - top layouts by expanded bytes
+  - how often specialized fast paths fire
+  - how often generic expansion remains necessary
+
+Move existing specialized paths before generic expansion in PortMaster mode.
+
+Reserve expanded ByteBuffer capacity before per-vertex appends to avoid repeated
+growth/copy overhead.
+
+Add one or two safe specializations for already observed layouts:
+  - direct POS + CLR0, stride 16, used by early logo/menu quads
+  - indexed POS/NRM/CLR0/TEX0 combinations already handled by the older helper
+```
+
+Why this comes before the texture-fetch experiment:
+
+```text
+The layout stats will tell us whether a small number of GX layouts dominate.
+If they do, native fast paths are the fastest route to a useful result.
+If many layouts dominate or CPU upload remains too expensive, the same stats
+tell us what a vertex-texture-fetch prototype must support first.
+```
+
+Offline stopping point for this pass:
+
+```text
+Build succeeds in the PortMaster AArch64 Docker toolchain.
+No live-device performance conclusion until the next hardware test.
+```
+
 ### Follow-up: debug log flood / possible OOM reset
 
 The `c87221...` build got past the `bitset(255)` crash and started running the
