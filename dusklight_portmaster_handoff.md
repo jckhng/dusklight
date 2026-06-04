@@ -2121,6 +2121,30 @@ If no stats appear:
   confirm /mnt/mmc/roms/ports/dusklight.sh contains DUSKLIGHT_PORTMASTER_GX_STATS=1.
 ```
 
+### Regression: old indexed fast path causes no visible video
+
+The first path-4 diagnostic deployment produced sound but no visible video. The
+process kept running and stats were emitted, so this was not a launch failure.
+
+The log showed the old indexed fast path dominated immediately:
+
+```text
+prim=152 fmt=0 fifoStride=8 desc=0x0000cfc0000 ... paths[g=0,i16=...,pt=0,pc=0]
+```
+
+That path had been unreachable while generic expansion was tried first. Making
+it reachable appears to be a visual correctness regression. The immediate fix is
+to disable the `i16` fast path again and route indexed layouts back through the
+known-good generic native expansion.
+
+Keep this dead end in mind:
+
+```text
+Do not re-enable can_expand_index16_pos_color() ahead of generic expansion
+unless its output layout is made semantically identical to the generic native
+shader config, including active attributes and matrix-index handling.
+```
+
 ### Follow-up: debug log flood / possible OOM reset
 
 The `c87221...` build got past the `bitset(255)` crash and started running the
@@ -2477,4 +2501,69 @@ The fixed binary was deployed to:
 ```text
 /mnt/mmc/ports/dusklight/dusklight.aarch64
 /roms/ports/dusklight/dusklight.aarch64
+```
+
+### Follow-up: black screen despite rendered frames
+
+After disabling the regressing old INDEX16 fast path and returning to the
+generic native expansion path, Dusklight could run without the previous shader
+storage-buffer crash. The log advanced normally and GX stats showed live draw
+traffic, but the device screen showed no visible frames.
+
+The key framebuffer facts on RG35XX H / muOS:
+
+```text
+/sys/class/graphics/fb0/virtual_size = 640,960
+fbset geometry = 640 480 640 960 32
+stride = 2560
+```
+
+That means `/dev/fb0` contains two 640x480 pages. A raw capture showed:
+
+```text
+page 0: coherent Dusklight frame
+page 1: black
+```
+
+Copying page 0 into page 1 once while the game was running made the image show
+on the LCD. So this was not a renderer failure. The fbdev presenter was writing
+only the first visible-height page while the LCD scanout was using the other
+virtual page.
+
+Temporary confirmation command used on device:
+
+```bash
+dd if=/dev/fb0 of=/tmp/fb-page0.raw bs=1228800 count=1
+dd if=/tmp/fb-page0.raw of=/dev/fb0 bs=1228800 seek=1 conv=notrunc
+```
+
+Code fix:
+
+```text
+Aurora fbdev presenter now maps the full virtual framebuffer height and mirrors
+each presented frame to every full-height virtual page.
+```
+
+This is intentionally conservative for PortMaster devices. It avoids assuming
+which y-offset/page the frontend left active. It costs extra framebuffer copy
+bandwidth, but the current bottleneck is still CPU-side GX vertex expansion, not
+the final fbdev copy.
+
+Patched Build-ID:
+
+```text
+90c548d3505a78591aea0d5e829ce7f9f34e8ba2
+```
+
+The patched binary was deployed to:
+
+```text
+/mnt/mmc/ports/dusklight/dusklight.aarch64
+/roms/ports/dusklight/dusklight.aarch64
+```
+
+Pipeline cache was cleared again:
+
+```text
+/mnt/mmc/ports/dusklight/runtime/TwilitRealm/Dusklight/pipeline_cache.db*
 ```
