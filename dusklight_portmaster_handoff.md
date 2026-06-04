@@ -2037,6 +2037,90 @@ Build succeeds in the PortMaster AArch64 Docker toolchain.
 No live-device performance conclusion until the next hardware test.
 ```
 
+### Path 4 offline implementation pass
+
+Implemented offline while live hardware was unavailable:
+
+```text
+PortMaster draw routing now tries specialized native fast paths before the
+generic CPU expansion path.
+
+Existing fast paths were made reachable again:
+  - indexed POS/NRM/CLR0/TEX0 style path
+  - direct POS+TEX0 path
+
+Added one new observed-layout fast path:
+  - direct POS+CLR0, FIFO stride 16
+```
+
+The stride-16 direct POS+CLR0 layout was seen repeatedly in earlier logs:
+
+```text
+PortMaster GX direct expand skipped: fmt=0 vtxSize=16 posDesc=1 tex0Desc=0 nrmDesc=0 clr0Desc=1
+PortMaster GX generic native expand draw: prim=128 fmt=0 vtxCount=4 fifoStride=16 nativeStride=16 bytes=64
+```
+
+That layout should now use the new `direct-pos-clr0` fast path instead of the
+generic decoder.
+
+Also added:
+
+```text
+DUSKLIGHT_PORTMASTER_GX_STATS=1
+```
+
+to the launcher for the next diagnostic run. When enabled, Aurora records compact
+layout summaries every 2048 expanded draws. Expected log marker:
+
+```text
+PortMaster GX layout stats after ... expanded draws:
+```
+
+Each summary line reports:
+
+```text
+prim fmt fifoStride desc draws vertices fifoBytes nativeBytes
+paths[g=...,i16=...,pt=...,pc=...]
+```
+
+Path counters:
+
+```text
+g   generic fallback expansion
+i16 indexed POS/NRM/CLR0/TEX0 fast path
+pt  direct POS+TEX0 fast path
+pc  direct POS+CLR0 fast path
+```
+
+The expansion buffers now reserve the expected output size before appending
+vertices, which should reduce allocator growth/copy overhead even when generic
+fallback remains necessary.
+
+Offline diagnostic Build-ID:
+
+```text
+8eb007901cf35d2328f82d356fc567cd4c00b84e
+```
+
+Not yet deployed or tested on hardware. Next hardware test should check:
+
+```text
+grep -n 'PortMaster GX layout stats\\|direct-pos-clr0\\|generic native expand' /mnt/mmc/ports/dusklight/log.txt
+```
+
+Useful interpretation:
+
+```text
+If pc/i16/pt dominate and speed is still bad:
+  CPU upload/draw count is likely the bottleneck, not only generic decode.
+
+If g still dominates:
+  add fast paths for the top desc/fifoStride layouts in the stats summary.
+
+If no stats appear:
+  confirm /mnt/mmc/roms/ports/dusklight.sh contains DUSKLIGHT_PORTMASTER_GX_STATS=1.
+```
+
 ### Follow-up: debug log flood / possible OOM reset
 
 The `c87221...` build got past the `bitset(255)` crash and started running the
