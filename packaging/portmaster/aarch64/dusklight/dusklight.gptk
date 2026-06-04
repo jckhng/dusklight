@@ -1,0 +1,26 @@
+back = esc
+start = enter
+
+a = enter
+b = esc
+x = x
+y = y
+
+l1 = l
+l2 = l
+r1 = r
+r2 = r
+
+up = up
+down = down
+left = left
+right = right
+
+left_analog_up = up
+left_analog_down = down
+left_analog_left = left
+left_analog_right = right
+
+l3 = \
+r3 = \
+

@@ -25,7 +25,7 @@
 #include "dusk/logging.h"
 #include "dusk/string.hpp"
 #if TARGET_PC
-#include <format>
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 #endif
 

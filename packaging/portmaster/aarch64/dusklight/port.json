@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "name": "dusklight",
+  "items": [
+    "dusklight.sh",
+    "dusklight/"
+  ],
+  "attr": {
+    "title": "Dusklight",
+    "desc": "Fail-fast Linux aarch64 PortMaster package scaffold for the native Dusklight project.",
+    "inst": "Place a supported Twilight Princess disc image in dusklight/assets. Launch dusklight.sh from PortMaster.",
+    "genres": [
+      "adventure",
+      "action"
+    ],
+    "porter": [
+      "jckhng"
+    ],
+    "runtime": [
+      "weston_pkg_0.2.squashfs"
+    ],
+    "arch": [
+      "aarch64"
+    ]
+  }
+}

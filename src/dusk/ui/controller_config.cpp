@@ -963,7 +963,9 @@ void ControllerConfigWindow::render_page(Pane& pane, int port, Page page) {
             pane.add_section("Custom Action Bindings");
             pane.add_text("A key bound to any action here will REPLACE the default control for"
                           " that action. Only bind buttons here that aren't used anywhere else.");
-            for (auto& [configVars, actionName] : getActionBinds() | std::views::values) {
+            for (auto& [action, actionBinding] : getActionBinds()) {
+                static_cast<void>(action);
+                auto& [configVars, actionName] = actionBinding;
                 addActionBinding(&configVars->at(port), actionName);
             }
             break;
@@ -1004,7 +1006,9 @@ void ControllerConfigWindow::render_page(Pane& pane, int port, Page page) {
                 });
         };
 
-        for (auto& [configVars, actionName] : getActionBinds() | std::views::values) {
+        for (auto& [action, actionBinding] : getActionBinds()) {
+            static_cast<void>(action);
+            auto& [configVars, actionName] = actionBinding;
             addActionBinding(&configVars->at(port), actionName);
         }
         break;

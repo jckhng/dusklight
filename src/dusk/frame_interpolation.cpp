@@ -355,7 +355,7 @@ void add_interpolation_callback(InterpolationCallBack pCallBack, void* pUserWork
     if (!is_enabled() || s_presentation_depth > 0 || !g_is_sim_frame)
         return;
 
-    s_interpolationCallBackWork.emplace_back(pCallBack, pUserWork);
+    s_interpolationCallBackWork.push_back({pCallBack, pUserWork});
 }
 
 void begin_presentation_camera() {

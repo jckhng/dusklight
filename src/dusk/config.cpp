@@ -310,7 +310,8 @@ void dusk::config::Save() {
 }
 
 void dusk::config::ClearAllActionBindings(int port) {
-    for (auto& actionBinding : getActionBinds() | std::views::values) {
+    for (auto& [action, actionBinding] : getActionBinds()) {
+        static_cast<void>(action);
         actionBinding.configVars->at(port).setValue(PAD_NATIVE_BUTTON_INVALID);
     }
     Save();

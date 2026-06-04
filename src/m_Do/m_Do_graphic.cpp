@@ -8,6 +8,7 @@
 #include "d/dolzel.h" // IWYU pragma: keep
 
 #include <base/PPCArch.h>
+#include <cstdlib>
 #include <cstring>
 #include "DynamicLink.h"
 #include "JSystem/J2DGraph/J2DOrthoGraph.h"
@@ -57,6 +58,13 @@
 #include "dusk/imgui/ImGuiConsole.hpp"
 #include "dusk/logging.h"
 #include "dusk/settings.h"
+#endif
+
+#if TARGET_PC
+static bool portmasterLowSpecGraphics() {
+    static const bool enabled = std::getenv("DUSKLIGHT_PORTMASTER_LOW_SPEC") != nullptr;
+    return enabled;
+}
 #endif
 
 class mDoGph_HIO_c : public JORReflexible {
@@ -1029,6 +1037,11 @@ static void drawDepth_blurTex(TGXTexObj &dst) {
 
 static void drawDepth2(view_class* param_0, view_port_class* param_1, int param_2) {
     ZoneScoped;
+#if TARGET_PC
+    if (portmasterLowSpecGraphics()) {
+        return;
+    }
+#endif
     static GXColorS10 l_tevColor0 = {0, 0, 0, 0};
 
     if (daPy_getLinkPlayerActorClass() != NULL) {
@@ -1709,6 +1722,11 @@ void mDoGph_gInf_c::bloom_c::draw2() {
 
 void mDoGph_gInf_c::bloom_c::draw() {
     ZoneScoped;
+#if TARGET_PC
+    if (portmasterLowSpecGraphics()) {
+        return;
+    }
+#endif
     if (dusk::getSettings().game.bloomMode.getValue() == dusk::BloomMode::Dusk) {
         draw2();
         return;
@@ -1953,6 +1971,11 @@ void mDoGph_gInf_c::bloom_c::draw() {
 static void retry_captue_frame(view_class* param_0, view_port_class* param_1, int param_2) {
     UNUSED(param_0);
     UNUSED(param_2);
+#if TARGET_PC
+    if (portmasterLowSpecGraphics()) {
+        return;
+    }
+#endif
 
     s16 x_orig = (int)param_1->x_orig & 0xFFFFFFF8;
     s16 y_orig = (int)param_1->y_orig & 0xFFFFFFF8;
@@ -1988,6 +2011,12 @@ static void retry_captue_frame(view_class* param_0, view_port_class* param_1, in
 
 static void motionBlure(view_class* param_0) {
     ZoneScoped;
+#if TARGET_PC
+    if (portmasterLowSpecGraphics()) {
+        g_env_light.is_blure = 0;
+        return;
+    }
+#endif
     if (g_env_light.is_blure) {
         GXLoadTexObj(mDoGph_gInf_c::getFrameBufferTexObj(), GX_TEXMAP0);
         GXColor local_60;
@@ -2206,6 +2235,9 @@ int mDoGph_Painter() {
 
 #if TARGET_PC
     dusk::g_imguiConsole.PreDraw();
+    const bool lowSpecGraphics = portmasterLowSpecGraphics();
+#else
+    const bool lowSpecGraphics = false;
 #endif
 
     #if DEBUG
@@ -2213,7 +2245,7 @@ int mDoGph_Painter() {
     #endif
 
 #ifdef TARGET_PC
-    if (dusk::frame_interp::get_ui_tick_pending())
+    if (!lowSpecGraphics && dusk::frame_interp::get_ui_tick_pending())
 #endif
     {
         dComIfGp_particle_calcMenu();
@@ -2264,7 +2296,9 @@ int mDoGph_Painter() {
             fapGm_HIO_c::startCpuTimer();
             #endif
 
-            GX_DEBUG_GROUP(dComIfGd_imageDrawShadow, camera_p->view.viewMtx);
+            if (!lowSpecGraphics) {
+                GX_DEBUG_GROUP(dComIfGd_imageDrawShadow, camera_p->view.viewMtx);
+            }
 
             #if DEBUG
             // "drawing Shadow Texture (Rendering)"
@@ -2367,11 +2401,11 @@ int mDoGph_Painter() {
             GX_DEBUG_GROUP(dComIfGd_drawOpaListDarkBG);
             GX_DEBUG_GROUP(dComIfGd_drawOpaListMiddle);
 
-            if (fapGmHIO_getParticle()) {
+            if (!lowSpecGraphics && fapGmHIO_getParticle()) {
                 GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri0_B, &draw_info);
             }
 
-            if (fapGmHIO_getParticle()) {
+            if (!lowSpecGraphics && fapGmHIO_getParticle()) {
                 GX_DEBUG_GROUP(dComIfGp_particle_drawNormalPri0_B, &draw_info);
             }
 
@@ -2382,7 +2416,9 @@ int mDoGph_Painter() {
             fapGm_HIO_c::startCpuTimer();
             #endif
 
-            GX_DEBUG_GROUP(dComIfGd_drawShadow, camera_p->view.viewMtx);
+            if (!lowSpecGraphics) {
+                GX_DEBUG_GROUP(dComIfGd_drawShadow, camera_p->view.viewMtx);
+            }
 
             #if DEBUG
             // "shadow drawing (Rendering)"
@@ -2423,7 +2459,7 @@ int mDoGph_Painter() {
             GX_DEBUG_GROUP(dComIfGd_drawXluListBG);
             GX_DEBUG_GROUP(dComIfGd_drawXluListDarkBG);
 
-            if (fapGmHIO_getParticle()) {
+            if (!lowSpecGraphics && fapGmHIO_getParticle()) {
                 GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri0_A, &draw_info);
                 GX_DEBUG_GROUP(dComIfGp_particle_drawNormalPri0_A, &draw_info);
             }
@@ -2489,7 +2525,7 @@ int mDoGph_Painter() {
 
                 if (!(DEBUG && g_kankyoHIO.navy.field_0x30d != 0 &&
                       dKy_darkworld_check() == TRUE)) {
-                    if (g_env_light.is_blure == 0) {
+                    if (!lowSpecGraphics && g_env_light.is_blure == 0) {
                         GX_DEBUG_GROUP(dComIfGd_drawOpaListInvisible);
                         GX_DEBUG_GROUP(dComIfGd_drawXluListInvisible);
                     }
@@ -2503,7 +2539,7 @@ int mDoGph_Painter() {
                 fapGm_HIO_c::startCpuTimer();
                 #endif
 
-                if (fapGmHIO_getParticle()) {
+                if (!lowSpecGraphics && fapGmHIO_getParticle()) {
                     GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri4, &draw_info);
                     GX_DEBUG_GROUP(dComIfGp_particle_drawProjection, &draw_info);
                 }
@@ -2527,11 +2563,13 @@ int mDoGph_Painter() {
                 GXSetClipMode(GX_CLIP_ENABLE);
 
                 if (DEBUG && g_kankyoHIO.navy.field_0x30d) {
-                    if (dKy_darkworld_check() != TRUE) {
+                    if (!lowSpecGraphics && dKy_darkworld_check() != TRUE) {
                         GX_DEBUG_GROUP(dComIfGd_drawOpaListFilter);
                     }
                 } else {
-                    GX_DEBUG_GROUP(dComIfGd_drawOpaListFilter);
+                    if (!lowSpecGraphics) {
+                        GX_DEBUG_GROUP(dComIfGd_drawOpaListFilter);
+                    }
                 }
 
                 #if DEBUG
@@ -2543,7 +2581,7 @@ int mDoGph_Painter() {
 
                 GXSetClipMode(GX_CLIP_ENABLE);
 
-                if (fapGmHIO_getParticle()) {
+                if (!lowSpecGraphics && fapGmHIO_getParticle()) {
                     GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri1, &draw_info);
                     GX_DEBUG_GROUP(dComIfGp_particle_draw, &draw_info);
                     GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri2, &draw_info);
@@ -2573,13 +2611,13 @@ int mDoGph_Painter() {
 
                 if (!(DEBUG && g_kankyoHIO.navy.field_0x30d != 0 &&
                       dKy_darkworld_check() == TRUE)) {
-                    if (g_env_light.is_blure == 1) {
+                    if (!lowSpecGraphics && g_env_light.is_blure == 1) {
                         GX_DEBUG_GROUP(dComIfGd_drawOpaListInvisible);
                         GX_DEBUG_GROUP(dComIfGd_drawXluListInvisible);
                     }
                 }
 
-                if (fapGmHIO_getParticle()) {
+                if (!lowSpecGraphics && fapGmHIO_getParticle()) {
                     GX_DEBUG_GROUP(dComIfGp_particle_drawScreen, &draw_info);
                 }
 
@@ -2592,7 +2630,9 @@ int mDoGph_Painter() {
 
                 GXSetClipMode(GX_CLIP_ENABLE);
 
-                GX_DEBUG_GROUP(dComIfGd_drawIndScreen);
+                if (!lowSpecGraphics) {
+                    GX_DEBUG_GROUP(dComIfGd_drawIndScreen);
+                }
 
                 if (strcmp(dComIfGp_getStartStageName(), "F_SP124") == 0) {
                     retry_captue_frame(&camera_p->view, view_port,
@@ -2616,7 +2656,9 @@ int mDoGph_Painter() {
 
                 cMtx_lookAt(m2, &sp38c, &cXyz::Zero, &sp398, 0);
                 j3dSys.setViewMtx(m2);
-                GX_DEBUG_GROUP(dComIfGd_drawXluList2DScreen);
+                if (!lowSpecGraphics) {
+                    GX_DEBUG_GROUP(dComIfGd_drawXluList2DScreen);
+                }
 
                 j3dSys.setViewMtx(camera_p->view.viewMtx);
                 GXSetProjection(camera_p->view.projMtx, GX_PERSPECTIVE);
@@ -2672,7 +2714,7 @@ int mDoGph_Painter() {
                 fapGm_HIO_c::startCpuTimer();
                 #endif
 
-                if (fapGmHIO_getParticle()) {
+                if (!lowSpecGraphics && fapGmHIO_getParticle()) {
                     #if WIDESCREEN_SUPPORT
                     if (mDoGph_gInf_c::isWideZoom()) {
                         ortho.setOrtho(0.0f, 0.0f, FB_WIDTH_BASE, FB_HEIGHT_BASE, 100000.0f, -100000.0f);
@@ -2787,11 +2829,13 @@ int mDoGph_Painter() {
 
         JPADrawInfo draw_info3(m5, 0.0f, FB_HEIGHT_BASE, 0.0f, FB_WIDTH_BASE);
 
-        if (!dComIfGp_isPauseFlag()) {
+        if (!lowSpecGraphics && !dComIfGp_isPauseFlag()) {
             GX_DEBUG_GROUP(dComIfGp_particle_draw2Dback, &draw_info3);
         }
 
-        GX_DEBUG_GROUP(dComIfGp_particle_draw2DmenuBack, &draw_info3);
+        if (!lowSpecGraphics) {
+            GX_DEBUG_GROUP(dComIfGp_particle_draw2DmenuBack, &draw_info3);
+        }
         ortho.setPort();
 
         GX_DEBUG_GROUP(dComIfGd_draw2DOpa);
@@ -2805,7 +2849,7 @@ int mDoGph_Painter() {
         GX_DEBUG_GROUP(dComIfGd_draw2DOpaTop);
         GX_DEBUG_GROUP(dComIfGd_draw2DXlu);
 
-        if (dComIfGp_isPauseFlag()) {
+        if (!lowSpecGraphics && dComIfGp_isPauseFlag()) {
             GX_DEBUG_GROUP(dComIfGp_particle_draw2Dfore, &draw_info3);
         }
 
@@ -2819,7 +2863,9 @@ int mDoGph_Painter() {
             mDoGph_gInf_c::calcFade();
         }
 
-        GX_DEBUG_GROUP(dComIfGp_particle_draw2DmenuFore, &draw_info3);
+        if (!lowSpecGraphics) {
+            GX_DEBUG_GROUP(dComIfGp_particle_draw2DmenuFore, &draw_info3);
+        }
         j3dSys.setViewMtx(m4);
     } else {
         // No camera window active — still draw 2D display lists

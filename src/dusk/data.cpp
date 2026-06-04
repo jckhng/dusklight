@@ -577,7 +577,8 @@ std::uintmax_t remove_empty_directories(const std::filesystem::path& root, bool 
     }
 
     std::uintmax_t removed = 0;
-    for (auto& dir : std::views::reverse(directories)) {
+    for (auto it = directories.rbegin(); it != directories.rend(); ++it) {
+        auto& dir = *it;
         if (!std::filesystem::is_empty(dir, ec)) {
             ec.clear();
             continue;

@@ -898,7 +898,8 @@ void populate_item_slot_picker(Pane& pane, int slot) {
             mDoAud_seStartMenu(kSoundItemChange);
             dComIfGs_setItem(slot, dItemNo_NONE_e);
         });
-    for (const auto& [itemId, item] : itemMap) {
+    for (const auto& [itemIdBinding, item] : itemMap) {
+        const auto itemId = itemIdBinding;
         if (item.m_type != ITEMTYPE_EQUIP_e) {
             continue;
         }
@@ -927,7 +928,8 @@ void populate_item_flag_picker(Pane& pane) {
     });
 
     pane.add_section("Items");
-    for (const auto& [itemId, item] : itemMap) {
+    for (const auto& [itemIdBinding, item] : itemMap) {
+        const auto itemId = itemIdBinding;
         if (!can_edit_item_first_bit(itemId, item)) {
             continue;
         }
@@ -1076,7 +1078,8 @@ template <size_t Size>
 std::vector<ToggleEntry> event_toggle_entries(const std::array<NamedFlagEntry, Size>& entries) {
     std::vector<ToggleEntry> toggles;
     toggles.reserve(entries.size());
-    for (const auto& [name, flag] : entries) {
+    for (const auto& [name, flagBinding] : entries) {
+        const auto flag = flagBinding;
         toggles.push_back({
             .text = name,
             .isSelected = [flag] { return dComIfGs_isEventBit(flag); },
@@ -1091,7 +1094,8 @@ std::vector<ToggleEntry> collect_crystal_toggle_entries(
     const std::array<NamedIndexEntry, Size>& entries) {
     std::vector<ToggleEntry> toggles;
     toggles.reserve(entries.size());
-    for (const auto& [name, index] : entries) {
+    for (const auto& [name, indexBinding] : entries) {
+        const auto index = indexBinding;
         toggles.push_back({
             .text = name,
             .isSelected = [index] { return dComIfGs_isCollectCrystal(index); },
@@ -1113,7 +1117,8 @@ std::vector<ToggleEntry> collect_mirror_toggle_entries(
     const std::array<NamedIndexEntry, Size>& entries) {
     std::vector<ToggleEntry> toggles;
     toggles.reserve(entries.size());
-    for (const auto& [name, index] : entries) {
+    for (const auto& [name, indexBinding] : entries) {
+        const auto index = indexBinding;
         toggles.push_back({
             .text = name,
             .isSelected = [index] { return dComIfGs_isCollectMirror(index); },

@@ -208,7 +208,8 @@ bool is_prelaunch_open() noexcept {
 }
 
 Document* top_document() noexcept {
-    for (auto& doc : std::views::reverse(sDocumentStack)) {
+    for (auto it = sDocumentStack.rbegin(); it != sDocumentStack.rend(); ++it) {
+        auto& doc = *it;
         if (!doc->closed() && !doc->pending_close()) {
             return doc.get();
         }
@@ -236,13 +237,15 @@ void update() noexcept {
 
     // Remove closed documents
     {
-        const auto [first, last] =
-            std::ranges::remove_if(sDocumentStack, [](const auto& doc) { return doc->closed(); });
+        const auto first =
+            std::remove_if(sDocumentStack.begin(), sDocumentStack.end(), [](const auto& doc) { return doc->closed(); });
+        const auto last = sDocumentStack.end();
         sDocumentStack.erase(first, last);
     }
     {
-        const auto [first, last] = std::ranges::remove_if(
-            sPassiveDocuments, [](const auto& doc) { return doc->closed(); });
+        const auto first = std::remove_if(
+            sPassiveDocuments.begin(), sPassiveDocuments.end(), [](const auto& doc) { return doc->closed(); });
+        const auto last = sPassiveDocuments.end();
         sPassiveDocuments.erase(first, last);
     }
 
@@ -251,7 +254,8 @@ void update() noexcept {
         context != nullptr && (context->GetFocusElement() == nullptr ||
                                   context->GetFocusElement() == context->GetRootElement()))
     {
-        for (auto& doc : std::views::reverse(sDocumentStack)) {
+        for (auto it = sDocumentStack.rbegin(); it != sDocumentStack.rend(); ++it) {
+            auto& doc = *it;
             if (!doc->closed() && !doc->pending_close() && doc->focus()) {
                 break;
             }
