@@ -16,9 +16,6 @@
     "porter": [
       "jckhng"
     ],
-    "runtime": [
-      "weston_pkg_0.2.squashfs"
-    ],
     "arch": [
       "aarch64"
     ]

@@ -12,6 +12,7 @@
 #include "m_Do/m_Do_graphic.h"
 #include "m_Do/m_Do_lib.h"
 #include "m_Do/m_Do_mtx.h"
+#include <cstdlib>
 
 #if TARGET_PC
 #include <cstdio>
@@ -27,6 +28,11 @@ static const void* getInterpKey(const void* base, int idx) {
     return reinterpret_cast<const void*>(reinterpret_cast<uintptr_t>(base) ^ idx);
 }
 #endif
+
+static bool portmaster_env_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != NULL && value[0] != '\0' && value[0] != '0';
+}
 
 class dDlst_2Dm_c {
 public:
@@ -1610,6 +1616,10 @@ void dDlst_shadowControl_c::imageDraw(Mtx param_0) {
 }
 
 void dDlst_shadowControl_c::draw(Mtx param_0) {
+    if (portmaster_env_enabled("DUSKLIGHT_PORTMASTER_DISABLE_SHADOW_DRAW")) {
+        return;
+    }
+
     static GXTevColorChan l_tevColorChan[4] = {
         GX_CH_RED,
         GX_CH_GREEN,

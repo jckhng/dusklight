@@ -8,6 +8,8 @@ elif [ -d "/opt/tools/PortMaster/" ]; then
   controlfolder="/opt/tools/PortMaster"
 elif [ -d "$XDG_DATA_HOME/PortMaster/" ]; then
   controlfolder="$XDG_DATA_HOME/PortMaster"
+elif [ -d "/mnt/mmc/MUOS/PortMaster/" ]; then
+  controlfolder="/mnt/mmc/MUOS/PortMaster"
 else
   controlfolder="/roms/ports/PortMaster"
 fi
@@ -17,16 +19,9 @@ source "$controlfolder/control.txt"
 get_controls
 
 GAMEDIR=/$directory/ports/dusklight/
-if [ ! -x "$GAMEDIR/dusklight.${DEVICE_ARCH}" ] && [ -x "/$directory/dusklight/dusklight.${DEVICE_ARCH}" ]; then
-  GAMEDIR="/$directory/dusklight/"
-elif [ ! -x "$GAMEDIR/dusklight.${DEVICE_ARCH}" ] && [ -x "/roms/ports/dusklight/dusklight.${DEVICE_ARCH}" ]; then
-  GAMEDIR="/roms/ports/dusklight/"
-fi
 RUNTIME_DIR="$GAMEDIR/runtime"
 ASSETS_DIR="$GAMEDIR/assets"
 BIN="$GAMEDIR/dusklight.${DEVICE_ARCH}"
-DISPLAY_W="${DISPLAY_WIDTH:-640}"
-DISPLAY_H="${DISPLAY_HEIGHT:-480}"
 
 mkdir -p "$RUNTIME_DIR" "$RUNTIME_DIR/home" "$ASSETS_DIR"
 
@@ -38,8 +33,26 @@ export HOME="$RUNTIME_DIR/home"
 export XDG_DATA_HOME="$RUNTIME_DIR"
 export XDG_CACHE_HOME="$RUNTIME_DIR/cache"
 export XDG_CONFIG_HOME="$RUNTIME_DIR/config"
+
+export DUSKLIGHT_PORTMASTER_X11_DAWN=1
+export DUSKLIGHT_PORTMASTER_LOW_SPEC=1
+export DUSKLIGHT_PORTMASTER_EGL_FBDEV_SURFACE=1
+export DUSKLIGHT_PORTMASTER_RENDER_WIDTH=320
+export DUSKLIGHT_PORTMASTER_RENDER_HEIGHT=240
+export DUSKLIGHT_PORTMASTER_GX_STATS="${DUSKLIGHT_PORTMASTER_GX_STATS:-0}"
+export DUSKLIGHT_PORTMASTER_NOINDEX_TRIANGLES=1
+export DUSKLIGHT_PORTMASTER_SAFE_PACING_FPS="${DUSKLIGHT_PORTMASTER_SAFE_PACING_FPS:-15}"
+export DUSKLIGHT_PORTMASTER_SAFE_PACING_MAX_TICKS="${DUSKLIGHT_PORTMASTER_SAFE_PACING_MAX_TICKS:-4}"
+export DUSKLIGHT_PORTMASTER_DISABLE_DEPTH_PEEK=1
+export DUSKLIGHT_PORTMASTER_DRAW_SKIP="${DUSKLIGHT_PORTMASTER_DRAW_SKIP:-1}"
+export DUSKLIGHT_PORTMASTER_INPUT_DIAG="${DUSKLIGHT_PORTMASTER_INPUT_DIAG:-0}"
+export SDL_VIDEODRIVER=offscreen
+
+if grep -q 'Name="muOS-Keys"' /proc/bus/input/devices 2>/dev/null; then
+  sdl_controllerconfig="$(grep -m1 ',muOS-Keys,' "$GAMEDIR/res/gamecontrollerdb.txt")"
+fi
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
-export LD_LIBRARY_PATH="$GAMEDIR/libs.${DEVICE_ARCH}:$GAMEDIR/lib.${DEVICE_ARCH}:$GAMEDIR/lib:$GAMEDIR/libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="$GAMEDIR/lib.${DEVICE_ARCH}:$GAMEDIR/libs.${DEVICE_ARCH}:$GAMEDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 DVD_PATH=""
 for candidate in "$ASSETS_DIR"/*.iso "$ASSETS_DIR"/*.ISO "$ASSETS_DIR"/*.gcm "$ASSETS_DIR"/*.GCM "$ASSETS_DIR"/*.rvz "$ASSETS_DIR"/*.RVZ; do
@@ -49,19 +62,10 @@ for candidate in "$ASSETS_DIR"/*.iso "$ASSETS_DIR"/*.ISO "$ASSETS_DIR"/*.gcm "$A
   fi
 done
 
-if [ ! -x "$BIN" ]; then
-  echo "Missing executable: $BIN"
-  command -v pm_finish >/dev/null 2>&1 && pm_finish
-  exit 1
-fi
-
-if [ -z "$DVD_PATH" ]; then
-  echo "No disc image found in $ASSETS_DIR; Dusklight may open the prelaunch UI."
-fi
-
 pm_platform_helper "$BIN"
 
 DUSKLIGHT_ARGS=(
+  --log-level 1
   --backend opengles
   --cvar backend.graphicsBackend=opengles
   --cvar backend.skipPreLaunchUI=true
@@ -69,15 +73,19 @@ DUSKLIGHT_ARGS=(
   --cvar backend.checkForUpdates=false
   --cvar video.enableFullscreen=true
   --cvar video.enableVsync=false
-  --cvar video.maxFrameRate=5
+  --cvar video.maxFrameRate=30
   --cvar game.bloomMode=0
   --cvar game.bloomMultiplier=0
   --cvar game.depthOfFieldMode=0
   --cvar game.disableWaterRefraction=true
   --cvar game.disableCutscenePillarboxing=true
+  --cvar game.disableRupeeCutscenes=true
   --cvar game.enableTextureReplacements=false
   --cvar game.enableFrameInterpolation=0
-  --cvar game.internalResolutionScale=1
+  --cvar game.fastTears=true
+  --cvar game.instantSaves=true
+  --cvar game.instantText=true
+  --cvar game.internalResolutionScale=0
   --cvar game.shadowResolutionMultiplier=0
   --cvar game.resampler=0
   --cvar game.enableMapBackground=false
@@ -92,25 +100,6 @@ if [ -n "$DVD_PATH" ]; then
   DUSKLIGHT_ARGS+=("$DVD_PATH")
 fi
 
-RUN_SCRIPT="$RUNTIME_DIR/run-dusklight.sh"
-{
-  printf '#!/bin/bash\n'
-  printf 'exec %q' "$BIN"
-  for arg in "${DUSKLIGHT_ARGS[@]}"; do
-    printf ' %q' "$arg"
-  done
-  printf '\n'
-} > "$RUN_SCRIPT"
-chmod +x "$RUN_SCRIPT"
+"$BIN" "${DUSKLIGHT_ARGS[@]}"
 
-$ESUDO env \
-  DUSKLIGHT_PORTMASTER_X11_DAWN=1 \
-  DUSKLIGHT_PORTMASTER_NO_SURFACE=1 \
-  DUSKLIGHT_PORTMASTER_SKIP_COMPAT_SURFACE=1 \
-  DUSKLIGHT_PORTMASTER_FBDEV_PRESENT=1 \
-  DUSKLIGHT_PORTMASTER_LOW_SPEC=1 \
-  DUSKLIGHT_PORTMASTER_GX_STATS=1 \
-  SDL_VIDEODRIVER=offscreen \
-  "$RUN_SCRIPT"
-
-command -v pm_finish >/dev/null 2>&1 && pm_finish
+pm_finish

@@ -104,6 +104,11 @@ int fpcM_DrawIterater(fpcM_DrawIteraterFunc i_drawIterFunc);
 int fpcM_Execute(void* i_process);
 int fpcM_Delete(void* i_process);
 BOOL fpcM_IsCreating(fpc_ProcID i_id);
+#if TARGET_PC
+bool fpcM_PortmasterBeginFrameDecision();
+bool fpcM_PortmasterShouldDrawFrame();
+void fpcM_PortmasterEndFrameDecision();
+#endif
 void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_postExecuteFn);
 void fpcM_Init();
 base_process_class* fpcM_FastCreate(s16 i_procname, FastCreateReqFunc i_createReqFunc,

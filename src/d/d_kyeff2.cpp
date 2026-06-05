@@ -8,8 +8,18 @@
 #include "SSystem/SComponent/c_phase.h"
 #include "d/d_kyeff2.h"
 #include "d/d_kankyo_wether.h"
+#include <cstdlib>
+
+static bool portmaster_env_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != NULL && value[0] != '\0' && value[0] != '0';
+}
 
 static int dKyeff2_Draw(dKyeff2_c* i_this) {
+    if (portmaster_env_enabled("DUSKLIGHT_PORTMASTER_DISABLE_WEATHER_DRAW")) {
+        return 1;
+    }
+
     dKyw_wether_draw2();
     return 1;
 }

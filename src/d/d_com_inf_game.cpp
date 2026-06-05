@@ -23,10 +23,16 @@
 #include "m_Do/m_Do_Reset.h"
 #include "m_Do/m_Do_controller_pad.h"
 #include "m_Do/m_Do_graphic.h"
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
 #include "dusk/string.hpp"
+
+static bool portmaster_env_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != NULL && value[0] != '\0' && value[0] != '0';
+}
 
 void dComIfG_play_c::ct() {
     mWindowNum = 0;
@@ -915,6 +921,10 @@ void dComIfG_play_c::deleteSimpleModel() {
 }
 
 void dComIfG_play_c::drawSimpleModel() {
+    if (portmaster_env_enabled("DUSKLIGHT_PORTMASTER_DISABLE_SIMPLE_MODEL_DRAW")) {
+        return;
+    }
+
     if (mSimpleModel != NULL) {
         mSimpleModel->draw();
     }

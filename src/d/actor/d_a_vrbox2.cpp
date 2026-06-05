@@ -12,9 +12,15 @@
 #include "f_op/f_op_camera_mng.h"
 #include "JSystem/J3DGraphBase/J3DMaterial.h"
 #include "SSystem/SComponent/c_math.h"
+#include <cstdlib>
 #include <cstring>
 
 static int daVrbox2_color_set(vrbox2_class* param_0);
+
+static bool portmaster_env_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != NULL && value[0] != '\0' && value[0] != '0';
+}
 
 static void texScrollCheck(f32& param_0) {
     while (param_0 < 0.0f)
@@ -25,6 +31,10 @@ static void texScrollCheck(f32& param_0) {
 }
 
 static int daVrbox2_Draw(vrbox2_class* i_this) {
+    if (portmaster_env_enabled("DUSKLIGHT_PORTMASTER_DISABLE_SKYBOX_DRAW")) {
+        return 1;
+    }
+
     camera_class* camera_p;
     dKankyo_sunlenz_Packet* lenz_p;
     J3DModel* kumo_model_p;

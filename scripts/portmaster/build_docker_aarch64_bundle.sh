@@ -8,8 +8,8 @@ Usage:
 
 Description:
   Builds Dusklight for Linux aarch64 in Docker, then stages a PortMaster zip.
-  The Docker build uses Aurora's prebuilt Linux aarch64 Dawn package, vendored
-  SDL3, and source-built nod for DVD support.
+  The Docker build uses source-built Dawn with the PortMaster fbdev surface
+  patch, vendored SDL3, and source-built nod for DVD support.
 EOF
 }
 
@@ -48,13 +48,22 @@ docker build -f "$ROOT_DIR/packaging/portmaster/cmake-aarch64.Dockerfile" -t "$I
 docker run --rm -v "$ROOT_DIR:/work" "$IMAGE"
 
 BUILD_DIR="$ROOT_DIR/build/portmaster-aarch64"
-BIN_PATH="$BUILD_DIR/Binaries/dusklight"
+BIN_PATH="$BUILD_DIR/install/dusklight"
+if [[ ! -f "$BIN_PATH" ]]; then
+    BIN_PATH="$BUILD_DIR/dusklight"
+fi
 LIB_DIR="$BUILD_DIR/install"
 
-ARGS=(--binary "$BIN_PATH" --lib-dir "$LIB_DIR" --out-dir "$OUT_DIR")
+ARGS=(
+    --binary "$BIN_PATH"
+    --lib-dir "$LIB_DIR"
+    --lib-dir "$BUILD_DIR/_deps/aurora_nod-build"
+    --lib-dir "$BUILD_DIR/_deps/sdl-build"
+    --lib-dir "$BUILD_DIR/_deps/dawn-build/src/dawn/native"
+    --out-dir "$OUT_DIR"
+)
 if [[ -n "$ASSETS_DIR" ]]; then
     ARGS+=(--assets-dir "$ASSETS_DIR")
 fi
 
 "$ROOT_DIR/scripts/portmaster/build_aarch64_bundle.sh" "${ARGS[@]}"
-

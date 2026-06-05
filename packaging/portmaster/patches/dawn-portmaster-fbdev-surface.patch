@@ -1,0 +1,67 @@
+diff --git a/src/dawn/native/Surface.cpp b/src/dawn/native/Surface.cpp
+index 53e6ac8..7d49b40 100644
+--- a/src/dawn/native/Surface.cpp
++++ b/src/dawn/native/Surface.cpp
+@@ -188,10 +188,13 @@ ResultOrError<UnpackedPtr<SurfaceDescriptor>> ValidateSurfaceDescriptor(
+             return descriptor;
+         }
+ #endif  // defined(DAWN_USE_WAYLAND)
+-#if defined(DAWN_USE_X11)
+         case wgpu::SType::SurfaceSourceXlibWindow: {
+             auto* subDesc = descriptor.Get<SurfaceSourceXlibWindow>();
+             DAWN_ASSERT(subDesc != nullptr);
++            if (subDesc->display == nullptr) {
++                return descriptor;
++            }
++#if defined(DAWN_USE_X11)
+             // Check the validity of the window by calling a getter function on the window that
+             // returns a status code. If the window is bad the call return a status of zero. We
+             // need to set a temporary X11 error handler while doing this because the default
+@@ -210,8 +213,10 @@ ResultOrError<UnpackedPtr<SurfaceDescriptor>> ValidateSurfaceDescriptor(
+ 
+             DAWN_INVALID_IF(status == 0, "Invalid X Window");
+             return descriptor;
+-        }
++#else
++            return DAWN_VALIDATION_ERROR("Xlib surface requires X11 or PortMaster fbdev sentinel.");
+ #endif  // defined(DAWN_USE_X11)
++        }
+         default:
+             return DAWN_VALIDATION_ERROR("Unsupported sType (%s)", type);
+     }
+diff --git a/src/dawn/native/opengl/SwapChainEGL.cpp b/src/dawn/native/opengl/SwapChainEGL.cpp
+index 5f7daea..12880b3 100644
+--- a/src/dawn/native/opengl/SwapChainEGL.cpp
++++ b/src/dawn/native/opengl/SwapChainEGL.cpp
+@@ -27,6 +27,7 @@
+ 
+ #include "dawn/native/opengl/SwapChainEGL.h"
+ 
++#include <cstdint>
+ #include <utility>
+ 
+ #include "dawn/native/Surface.h"
+@@ -218,12 +219,20 @@ MaybeError SwapChainEGL::Initialize(Surface* surface) {
+                 return {};
+             }
+ #endif  // DAWN_PLATFORM_IS(WIN32)
+-#if defined(DAWN_USE_X11)
+             case Surface::Type::XlibWindow:
++                if (surface->GetXDisplay() == nullptr) {
++                    mEGLSurface = egl.CreateWindowSurface(
++                        eglDisplay, config,
++                        (EGLNativeWindowType)(uintptr_t)surface->GetXWindow(),
++                        attribs.data());
++                    return {};
++                }
++#if defined(DAWN_USE_X11)
+                 mEGLSurface = egl.CreateWindowSurface(
+                     eglDisplay, config, uint32_t(surface->GetXWindow()), attribs.data());
+                 return {};
++#else
++                return DAWN_FORMAT_INTERNAL_ERROR("%s cannot be supported on EGL without X11.", surface);
+ #endif  // defined(DAWN_USE_X11)
+-
+             // TODO(344814083): Add support for creating surfaces using EGL_KHR_platform_base and
+             // friends.
+             case Surface::Type::WaylandSurface:

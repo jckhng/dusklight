@@ -10,10 +10,16 @@
 #include "SSystem/SComponent/c_math.h"
 #include "d/d_com_inf_game.h"
 #include "Z2AudioLib/Z2Instances.h"
+#include <cstdlib>
 #include <cstring>
 
 #include "d/actor/d_grass.inc" // IWYU pragma: keep
 #include "d/actor/d_flower.inc"
+
+static bool portmaster_env_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != NULL && value[0] != '\0' && value[0] != '0';
+}
 
 static void randam_addcol_set(s16* param_0) {
     s16 temp_r4 = *param_0;
@@ -382,6 +388,10 @@ static int daGrass_execute(daGrass_c* i_this) {
 }
 
 int daGrass_c::draw() {
+    if (portmaster_env_enabled("DUSKLIGHT_PORTMASTER_DISABLE_GRASS_DRAW")) {
+        return 1;
+    }
+
     drawGrass();
     drawFlower();
     return 1;

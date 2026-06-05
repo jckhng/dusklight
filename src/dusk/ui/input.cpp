@@ -11,8 +11,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 
 #include "dusk/action_bindings.h"
+#include "dusk/logging.h"
 
 namespace dusk::ui::input {
 namespace {
@@ -62,6 +64,14 @@ TouchTapState sTouchMenuTap;
 
 double now_seconds() noexcept {
     return static_cast<double>(SDL_GetTicksNS()) / 1000000000.0;
+}
+
+bool input_diag_enabled() noexcept {
+    static const bool enabled = [] {
+        const char* value = std::getenv("DUSKLIGHT_PORTMASTER_INPUT_DIAG");
+        return value != nullptr && value[0] != '\0' && value[0] != '0';
+    }();
+    return enabled;
 }
 
 bool is_menu_chord_part(PADButton button) noexcept {
@@ -190,6 +200,17 @@ Rml::Input::KeyIdentifier map_pad_axis(PADAxis axis) noexcept {
     }
 }
 
+bool is_system_menu_button(SDL_GamepadButton button) noexcept {
+    switch (button) {
+    case SDL_GAMEPAD_BUTTON_GUIDE:
+    case SDL_GAMEPAD_BUTTON_MISC1:
+    case SDL_GAMEPAD_BUTTON_TOUCHPAD:
+        return true;
+    default:
+        return false;
+    }
+}
+
 Rml::Input::KeyIdentifier map_raw_gamepad_button(SDL_GamepadButton button) noexcept {
     switch (button) {
     case SDL_GAMEPAD_BUTTON_DPAD_UP:
@@ -204,7 +225,9 @@ Rml::Input::KeyIdentifier map_raw_gamepad_button(SDL_GamepadButton button) noexc
         return Rml::Input::KI_ESCAPE;
     case SDL_GAMEPAD_BUTTON_SOUTH:
         return Rml::Input::KI_RETURN;
-    case SDL_GAMEPAD_BUTTON_BACK:
+    case SDL_GAMEPAD_BUTTON_GUIDE:
+    case SDL_GAMEPAD_BUTTON_MISC1:
+    case SDL_GAMEPAD_BUTTON_TOUCHPAD:
         if (isActionBound(ActionBinds::OPEN_DUSKLIGHT_MENU, PAD_CHAN0)) {
             return Rml::Input::KI_UNKNOWN;
         }
@@ -220,7 +243,9 @@ Rml::Input::KeyIdentifier map_raw_gamepad_button(SDL_GamepadButton button) noexc
 
 Rml::Input::KeyIdentifier map_raw_button_alias(SDL_GamepadButton button) noexcept {
     switch (button) {
-    case SDL_GAMEPAD_BUTTON_BACK:
+    case SDL_GAMEPAD_BUTTON_GUIDE:
+    case SDL_GAMEPAD_BUTTON_MISC1:
+    case SDL_GAMEPAD_BUTTON_TOUCHPAD:
         if (isActionBound(ActionBinds::OPEN_DUSKLIGHT_MENU, PAD_CHAN0)) {
             return Rml::Input::KI_UNKNOWN;
         }
@@ -324,6 +349,22 @@ bool find_event_pad_button(
            find_mapped_pad_button(port, static_cast<SDL_GamepadButton>(event.button), button);
 }
 
+void log_button_diag(const SDL_GamepadButtonEvent& event, bool foundPadButton, u32 port, PADButton button) noexcept {
+    if (!input_diag_enabled()) {
+        return;
+    }
+
+    const auto nativeButton = static_cast<SDL_GamepadButton>(event.button);
+    const char* nativeName = SDL_GetGamepadStringForButton(nativeButton);
+    const char* padName = foundPadButton ? PADGetButtonName(button) : nullptr;
+    DuskLog.info("PortMaster input: sdl_button={}({}) port={} pad={}({})",
+                 nativeName != nullptr ? nativeName : "unknown",
+                 static_cast<int>(event.button),
+                 foundPadButton ? static_cast<int>(port) : -1,
+                 padName != nullptr ? padName : "unmapped",
+                 foundPadButton ? static_cast<int>(button) : 0);
+}
+
 Rml::Input::KeyIdentifier map_gamepad_button(const SDL_GamepadButtonEvent& event) noexcept {
     const auto nativeButton = static_cast<SDL_GamepadButton>(event.button);
     u32 port = 0;
@@ -335,7 +376,7 @@ Rml::Input::KeyIdentifier map_gamepad_button(const SDL_GamepadButtonEvent& event
         }
     }
 
-    if (nativeButton == SDL_GAMEPAD_BUTTON_BACK && !isActionBound(ActionBinds::OPEN_DUSKLIGHT_MENU, port)) {
+    if (is_system_menu_button(nativeButton) && !isActionBound(ActionBinds::OPEN_DUSKLIGHT_MENU, port)) {
         return Rml::Input::KI_F1;
     }
 
@@ -739,6 +780,7 @@ void handle_event(const SDL_Event& event) noexcept {
     PADButton button = 0;
     const bool hasPadButton = find_event_pad_button(event.gbutton, port, button);
     if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+        log_button_diag(event.gbutton, hasPadButton, port, button);
         set_pad_button_held(port, button, true);
         const bool chorded = hasPadButton && is_menu_chord_part(button) && is_menu_chord(port);
         if (chorded) {

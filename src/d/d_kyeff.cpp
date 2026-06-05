@@ -8,7 +8,13 @@
 #include "d/d_kyeff.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_kankyo_wether.h"
+#include <cstdlib>
 #include <cstring>
+
+static bool portmaster_env_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != NULL && value[0] != '\0' && value[0] != '0';
+}
 
 #if DEBUG
 class dKyeff_HIO_c : public JORReflexible {
@@ -59,6 +65,10 @@ void dKyeff_HIO_c::genMessage(JORMContext* mctx) {
 
 static int dKyeff_Draw(dKyeff_c* i_this) {
     UNUSED(i_this);
+
+    if (portmaster_env_enabled("DUSKLIGHT_PORTMASTER_DISABLE_WEATHER_DRAW")) {
+        return 1;
+    }
 
     dKyw_wether_draw();
     return 1;

@@ -8,8 +8,14 @@
 #include "d/actor/d_a_vrbox.h"
 #include "JSystem/J3DGraphBase/J3DMaterial.h"
 #include "f_op/f_op_actor_mng.h"
+#include <cstdlib>
 
 static int daVrbox_color_set(vrbox_class* i_this);
+
+static bool portmaster_env_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != NULL && value[0] != '\0' && value[0] != '0';
+}
 
 static int daVrbox_Draw(vrbox_class* i_this) {
     J3DModel* soraModel_p = i_this->mpSoraModel;
@@ -17,6 +23,10 @@ static int daVrbox_Draw(vrbox_class* i_this) {
     dStage_FileList_dt_c* filelist_p = NULL;
 
     daVrbox_color_set(i_this);
+
+    if (portmaster_env_enabled("DUSKLIGHT_PORTMASTER_DISABLE_SKYBOX_DRAW")) {
+        return 1;
+    }
 
     if (g_env_light.hide_vrbox) {
         return 1;

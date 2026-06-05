@@ -30,6 +30,9 @@
 #include "d/d_s_play.h"
 #include "dusk/time.h"
 #include "f_ap/f_ap_game.h"
+#include "f_op/f_op_overlap_mng.h"
+#include "f_pc/f_pc_manager.h"
+#include "f_pc/f_pc_name.h"
 #include "f_op/f_op_msg.h"
 #include "m_Do/m_Do_MemCard.h"
 #include "m_Do/m_Do_Reset.h"
@@ -44,6 +47,7 @@
 #include <cstring>
 
 #include <filesystem>
+#include <cstdlib>
 #include <system_error>
 #include <thread>
 #include "SSystem/SComponent/c_API.h"
@@ -112,6 +116,44 @@ const int audioHeapSize = 0x14D800 * 2;
 #else
 const int audioHeapSize = 0x14D800;
 #endif
+
+static bool portmaster_env_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] != '\0' && value[0] != '0';
+}
+
+static const char* portmaster_safe_pacing_block_reason() {
+    base_process_class* playScene = fpcM_SearchByName(fpcNm_PLAY_SCENE_e);
+    if (playScene == nullptr) {
+        return "not_play_scene";
+    }
+
+    if (fopOvlpM_IsPeek()) {
+        return "overlap_peek";
+    }
+
+    if (fopOvlpM_IsDoingReq()) {
+        return "overlap_request";
+    }
+
+    if (dComIfGp_isEnableNextStage()) {
+        return "next_stage";
+    }
+
+    if (dComIfGp_isPauseFlag()) {
+        return "pause_flag";
+    }
+
+    if (dScnPly_c::isPause()) {
+        return "play_pause_timer";
+    }
+
+    if (!portmaster_env_enabled("DUSKLIGHT_PORTMASTER_SAFE_PACING_ALLOW_EVENTS") && dComIfGp_event_runCheck()) {
+        return "event_running";
+    }
+
+    return nullptr;
+}
 
 // =========================================================================
 // LOAD_COPYDATE - PC Version
@@ -272,22 +314,33 @@ void main01(void) {
 
         eventsDone:;
 
-        if (!aurora_begin_frame()) {
+        const bool portmasterDrawThisFrame = fpcM_PortmasterBeginFrameDecision();
+        if (portmasterDrawThisFrame && !aurora_begin_frame()) {
             DuskLog.debug("aurora_begin_frame returned false, skipping draw this frame");
+            fpcM_PortmasterEndFrameDecision();
             continue;
         }
 
         VIWaitForRetrace();
 
-        dusk::lastFrameAuroraStats = *aurora_get_stats();
-        mDoGph_gInf_c::updateRenderSize();
+        if (portmasterDrawThisFrame) {
+            dusk::lastFrameAuroraStats = *aurora_get_stats();
+            mDoGph_gInf_c::updateRenderSize();
 
-        dusk::ui::update();
+            dusk::ui::update();
+        }
+
+        if (const char* reason = portmaster_safe_pacing_block_reason()) {
+            dusk::game_clock::set_portmaster_safe_pacing_allowed(false, reason);
+        } else {
+            dusk::game_clock::set_portmaster_safe_pacing_allowed(true, "stable_play");
+        }
 
         const auto pacing = dusk::game_clock::advance_main_loop();
+        const auto frameInterpMode = dusk::game_clock::effective_frame_interp_mode();
         if (pacing.is_interpolating) {
             if (pacing.sim_ticks_to_run > 0) {
-                dusk::frame_interp::begin_frame(dusk::getSettings().game.enableFrameInterpolation, true, 0.0f);
+                dusk::frame_interp::begin_frame(frameInterpMode, true, 0.0f);
                 dusk::frame_interp::set_ui_tick_pending(true);
 
                 for (int sim_tick = 0; sim_tick < pacing.sim_ticks_to_run; ++sim_tick) {
@@ -301,8 +354,7 @@ void main01(void) {
                 }
             }
 
-            dusk::frame_interp::begin_frame(dusk::getSettings().game.enableFrameInterpolation, false,
-                                            dusk::game_clock::sample_interpolation_step());
+            dusk::frame_interp::begin_frame(frameInterpMode, false, dusk::game_clock::sample_interpolation_step());
             dusk::frame_interp::interpolate();
             dusk::frame_interp::begin_presentation_camera();
             // run draw functions for anything specially marked to handle interp
@@ -330,8 +382,8 @@ void main01(void) {
         static double last_fps_setting = 0.0;
         static Limiter::duration_t target_ns = 0;
 
-        if (dusk::getSettings().game.enableFrameInterpolation.getValue() == dusk::FrameInterpMode::Capped && !dusk::getTransientSettings().skipFrameRateLimit) {
-            double current_fps = dusk::getSettings().video.maxFrameRate.getValue();
+        if (frameInterpMode == dusk::FrameInterpMode::Capped && !dusk::getTransientSettings().skipFrameRateLimit) {
+            double current_fps = dusk::game_clock::effective_max_frame_rate();
             if (current_fps != last_fps_setting) {
                 last_fps_setting = current_fps;
                 target_ns = static_cast<Limiter::duration_t>(1'000'000'000.0 / current_fps);
@@ -343,7 +395,10 @@ void main01(void) {
             main_loop_limiter.Reset();
         }
 
-        aurora_end_frame();
+        if (portmasterDrawThisFrame) {
+            aurora_end_frame();
+        }
+        fpcM_PortmasterEndFrameDecision();
 
 
         FrameMark;
@@ -558,8 +613,7 @@ int game_main(int argc, char* argv[]) {
     ApplyCVarOverrides(parsed_arg_options["cvar"]);
     dusk::crash_reporting::initialize();
     dusk::crash_handler::install();
-    // TODO: How to handle this?
-    // PADSetDefaultMapping(&defaultPadMapping, PAD_TYPE_STANDARD);
+    PADSetDefaultMapping(&defaultPadMapping, PAD_TYPE_STANDARD);
 
     {
         // Load mappings from https://github.com/mdqinc/SDL_GameControllerDB

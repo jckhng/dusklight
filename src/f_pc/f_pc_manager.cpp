@@ -22,6 +22,77 @@
 #include "m_Do/m_Do_controller_pad.h"
 
 #include "tracy/Tracy.hpp"
+#include "dusk/logging.h"
+
+#include <cstdlib>
+#include <cstring>
+
+namespace {
+
+bool sPortmasterFrameDecisionActive = false;
+bool sPortmasterDrawThisFrame = true;
+
+int portmaster_draw_skip_interval() {
+    static const int interval = [] {
+        const char* value = std::getenv("DUSKLIGHT_PORTMASTER_DRAW_SKIP");
+        if (value == nullptr || value[0] == '\0') {
+            return 1;
+        }
+
+        char* end = nullptr;
+        long parsed = std::strtol(value, &end, 10);
+        if (end == value || parsed < 1) {
+            DuskLog.warn("Ignoring invalid DUSKLIGHT_PORTMASTER_DRAW_SKIP={}", value);
+            return 1;
+        }
+
+        if (parsed > 8) {
+            DuskLog.warn("Clamping DUSKLIGHT_PORTMASTER_DRAW_SKIP={} to 8", parsed);
+            parsed = 8;
+        }
+
+        DuskLog.info("PortMaster draw skip enabled: drawing every {} logic frame(s)", parsed);
+        return static_cast<int>(parsed);
+    }();
+
+    return interval;
+}
+
+bool portmaster_compute_draw_this_frame() {
+    const int interval = portmaster_draw_skip_interval();
+    if (interval <= 1) {
+        return true;
+    }
+
+    static u32 frame = 0;
+    const bool draw = (frame % static_cast<u32>(interval)) == 0;
+    if (frame < 10 || (frame % 300) == 0) {
+        DuskLog.info("PortMaster draw skip: frame={} interval={} draw={}", frame, interval, draw);
+    }
+    ++frame;
+    return draw;
+}
+
+}
+
+#if TARGET_PC
+bool fpcM_PortmasterBeginFrameDecision() {
+    sPortmasterDrawThisFrame = portmaster_compute_draw_this_frame();
+    sPortmasterFrameDecisionActive = true;
+    return sPortmasterDrawThisFrame;
+}
+
+bool fpcM_PortmasterShouldDrawFrame() {
+    if (!sPortmasterFrameDecisionActive) {
+        return fpcM_PortmasterBeginFrameDecision();
+    }
+    return sPortmasterDrawThisFrame;
+}
+
+void fpcM_PortmasterEndFrameDecision() {
+    sPortmasterFrameDecisionActive = false;
+}
+#endif
 
 void fpcM_Draw(void* i_proc) {
     fpcDw_Execute((base_process_class*)i_proc);
@@ -45,8 +116,13 @@ BOOL fpcM_IsCreating(fpc_ProcID i_id) {
 
 void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_postExecuteFn) {
     ZoneScoped;
+#if TARGET_PC
+    const bool drawThisFrame = fpcM_PortmasterShouldDrawFrame();
+#else
+    const bool drawThisFrame = true;
+#endif
     MtxInit();
-    if (!fapGm_HIO_c::isCaptureScreen()) {
+    if (drawThisFrame && !fapGm_HIO_c::isCaptureScreen()) {
         dComIfGd_peekZdata();
     }
     fapGm_HIO_c::executeCaptureScreen();
@@ -65,7 +141,7 @@ void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_p
 
 #ifdef TARGET_PC
             // FRAME INTERP NOTE: Called in m_Do_main when interp is enabled
-            if (!dusk::frame_interp::is_enabled())
+            if (drawThisFrame && !dusk::frame_interp::is_enabled())
 #endif
             {
                 cAPIGph_Painter();
@@ -93,7 +169,8 @@ void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_p
                 fpcEx_Handler((fpcLnIt_QueueFunc)fpcM_Execute);
             }
 
-            if (!fapGm_HIO_c::isCaptureScreen() || fapGm_HIO_c::getCaptureScreenDivH() != 1) {
+            if (drawThisFrame &&
+                (!fapGm_HIO_c::isCaptureScreen() || fapGm_HIO_c::getCaptureScreenDivH() != 1)) {
                 fpcDw_Handler((fpcDw_HandlerFuncFunc)fpcM_DrawIterater, (fpcDw_HandlerFunc)fpcM_Draw);
             }
 
@@ -101,7 +178,9 @@ void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_p
                 i_postExecuteFn();
             }
 
-            dComIfGp_drawSimpleModel();
+            if (drawThisFrame) {
+                dComIfGp_drawSimpleModel();
+            }
         } else if (!l_dvdError) {
             dLib_time_c::stopTime();
             Z2GetSoundMgr()->pauseAllGameSound(true);
