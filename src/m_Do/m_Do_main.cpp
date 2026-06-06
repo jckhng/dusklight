@@ -123,6 +123,15 @@ static bool portmaster_env_enabled(const char* name) {
 }
 
 static const char* portmaster_safe_pacing_block_reason() {
+    if (portmaster_env_enabled("DUSKLIGHT_PORTMASTER_SAFE_PACING_UNGUARDED")) {
+        static bool logged = false;
+        if (!logged) {
+            logged = true;
+            DuskLog.info("PortMaster safe pacing guard: unguarded");
+        }
+        return nullptr;
+    }
+
     base_process_class* playScene = fpcM_SearchByName(fpcNm_PLAY_SCENE_e);
     if (playScene == nullptr) {
         return "not_play_scene";
@@ -146,6 +155,16 @@ static const char* portmaster_safe_pacing_block_reason() {
 
     if (dScnPly_c::isPause()) {
         return "play_pause_timer";
+    }
+
+    if (mDoGph_gInf_c::isFade() != 0) {
+        return "graphic_fade";
+    }
+
+    JUTFader* fader = mDoGph_gInf_c::getFader();
+    if (fader != nullptr &&
+        (fader->getStatus() == JUTFader::FadeIn || fader->getStatus() == JUTFader::FadeOut)) {
+        return "display_fader";
     }
 
     if (!portmaster_env_enabled("DUSKLIGHT_PORTMASTER_SAFE_PACING_ALLOW_EVENTS") && dComIfGp_event_runCheck()) {

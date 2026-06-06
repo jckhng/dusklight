@@ -20,6 +20,36 @@ transient and do not permanently rewrite the user's config.
 For device tests, place a Twilight Princess disc image in `dusklight/assets/`.
 Public PortMaster archives must not redistribute game data.
 
+## Local live-device loop
+
+Build a fresh test package:
+
+```sh
+scripts/portmaster/build_docker_aarch64_bundle.sh --out-dir artifacts/portmaster-test
+```
+
+Deploy the staged binary and launcher to a live muOS/PortMaster device:
+
+```sh
+PM_PASSWORD=<device-password> scripts/portmaster/live_device.py --host <device-ip> deploy
+```
+
+The helper deliberately targets the known PortMaster paths:
+
+- `/mnt/mmc/ports/dusklight/dusklight.aarch64`
+- `/mnt/mmc/ROMS/Ports/dusklight.sh`
+
+Useful follow-up commands:
+
+```sh
+PM_PASSWORD=<device-password> scripts/portmaster/live_device.py --host <device-ip> kill
+PM_PASSWORD=<device-password> scripts/portmaster/live_device.py --host <device-ip> verify
+PM_PASSWORD=<device-password> scripts/portmaster/live_device.py --host <device-ip> tail
+```
+
+Use `deploy --script-only` when only launcher defaults changed. This avoids
+copying the full binary during quick runtime-toggle tests.
+
 Primary expected failure points:
 
 - Dawn/OpenGLES not built into the binary.

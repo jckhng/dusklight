@@ -125,8 +125,19 @@ MainLoopPacer advance_main_loop() {
     }
 
     if (frame_gap > kAbnormalGapResetThreshold) {
-        s_current_snapshot_time = now - kSimPeriodDuration;
-        out.sim_ticks_to_run = 0;
+        if (portmaster_safe_pacing_fps() > 0) {
+            static int abnormal_gap_count = 0;
+            ++abnormal_gap_count;
+            if (abnormal_gap_count <= 5 || (abnormal_gap_count % 120) == 0) {
+                DuskLog.info("PortMaster safe pacing abnormal frame gap: advancing one sim tick (gap_ms={:.1f})",
+                             std::chrono::duration<float, std::milli>(frame_gap).count());
+            }
+            s_current_snapshot_time = now - kSimPeriodDuration - kSimPeriodDuration;
+            out.sim_ticks_to_run = 1;
+        } else {
+            s_current_snapshot_time = now - kSimPeriodDuration;
+            out.sim_ticks_to_run = 0;
+        }
         return out;
     }
 
