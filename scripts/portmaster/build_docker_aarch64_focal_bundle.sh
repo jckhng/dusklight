@@ -48,6 +48,20 @@ docker build -f "$ROOT_DIR/packaging/portmaster/cmake-aarch64-focal.Dockerfile" 
 docker run --rm -v "$ROOT_DIR:/work" "$IMAGE"
 
 BUILD_DIR="$ROOT_DIR/build/portmaster-aarch64-focal"
+docker run --rm -v "$ROOT_DIR:/work" "$IMAGE" bash -lc '
+set -euo pipefail
+for file in \
+    /work/build/portmaster-aarch64-focal/install/dusklight \
+    /work/build/portmaster-aarch64-focal/_deps/aurora_nod-build/libnod.so \
+    /work/build/portmaster-aarch64-focal/_deps/sdl-build/libSDL3.so* \
+    /work/build/portmaster-aarch64-focal/_deps/dawn-build/src/dawn/native/libwebgpu_dawn.so
+do
+    if [ -f "$file" ]; then
+        aarch64-linux-gnu-strip --strip-unneeded "$file"
+    fi
+done
+'
+
 BIN_PATH="$BUILD_DIR/install/dusklight"
 if [[ ! -f "$BIN_PATH" ]]; then
     BIN_PATH="$BUILD_DIR/dusklight"
