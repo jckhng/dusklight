@@ -68,22 +68,26 @@ def ssh_cmd(host: str, remote_cmd: str) -> list[str]:
     ]
 
 
-def scp_cmd(source: Path, host: str, dest: str) -> list[str]:
-    return [
+def scp_cmd(source: Path, host: str, dest: str, recursive: bool = False) -> list[str]:
+    cmd = [
         "scp",
         "-o",
         "StrictHostKeyChecking=no",
         "-o",
         "UserKnownHostsFile=/dev/null",
-        str(source),
-        f"root@{host}:{dest}",
     ]
+    if recursive:
+        cmd.append("-r")
+    cmd.extend([str(source), f"root@{host}:{dest}"])
+    return cmd
 
 
 def deploy(args: argparse.Namespace, password: str | None) -> None:
     stage_dir = args.stage_dir.resolve()
     binary = stage_dir / "dusklight" / "dusklight.aarch64"
     launcher = stage_dir / "dusklight.sh"
+    lib_dir = stage_dir / "dusklight" / "lib.aarch64"
+    res_dir = stage_dir / "dusklight" / "res"
 
     if not binary.is_file():
         raise SystemExit(f"Binary not found: {binary}")
@@ -99,6 +103,10 @@ def deploy(args: argparse.Namespace, password: str | None) -> None:
     )
     if not args.script_only:
         run_interactive(scp_cmd(binary, args.host, REMOTE_BINARY), password)
+        if lib_dir.is_dir():
+            run_interactive(scp_cmd(lib_dir, args.host, f"{REMOTE_GAME_DIR}/", recursive=True), password)
+        if res_dir.is_dir():
+            run_interactive(scp_cmd(res_dir, args.host, f"{REMOTE_GAME_DIR}/", recursive=True), password)
     run_interactive(scp_cmd(launcher, args.host, REMOTE_LAUNCHER), password)
     verify(args, password)
 

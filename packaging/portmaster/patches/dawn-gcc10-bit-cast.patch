@@ -1,0 +1,61 @@
+diff --git a/src/dawn/common/Math.cpp b/src/dawn/common/Math.cpp
+--- a/src/dawn/common/Math.cpp
++++ b/src/dawn/common/Math.cpp
+@@ -28,6 +28,7 @@
+ #include <algorithm>
+ #include <bit>
+ #include <cmath>
++#include <cstring>
+ #include <limits>
+ 
+ #include "dawn/common/Assert.h"
+@@ -74,7 +75,9 @@ bool IsAligned(uint32_t value, size_t alignment) {
+ }
+ 
+ uint16_t Float32ToFloat16(float fp32) {
+-    uint32_t fp32i = std::bit_cast<uint32_t>(fp32);
++    uint32_t fp32i;
++    static_assert(sizeof(fp32i) == sizeof(fp32));
++    std::memcpy(&fp32i, &fp32, sizeof(fp32i));
+     uint32_t sign16 = (fp32i & 0x80000000) >> 16;
+     uint32_t mantissaAndExponent = fp32i & 0x7FFFFFFF;
+ 
+diff --git a/src/dawn/platform/WorkerThread.h b/src/dawn/platform/WorkerThread.h
+--- a/src/dawn/platform/WorkerThread.h
++++ b/src/dawn/platform/WorkerThread.h
+@@ -59,6 +59,8 @@ class AsyncTaskHandleImpl : public RefCounted, public NonCopyable {
+     PostWorkerTaskCallback mCallback;
+     raw_ptr<void> mUserdata;
+     std::atomic<bool> mCompleted = false;
++    mutable std::mutex mCompletedMutex;
++    std::condition_variable mCompletedCv;
+ };
+ 
+ class AsyncJobHandleImpl : public RefCounted, public NonCopyable {
+diff --git a/src/dawn/platform/WorkerThread.cpp b/src/dawn/platform/WorkerThread.cpp
+--- a/src/dawn/platform/WorkerThread.cpp
++++ b/src/dawn/platform/WorkerThread.cpp
+@@ -69,7 +69,8 @@ AsyncTaskHandleImpl::~AsyncTaskHandleImpl() {
+ }
+ 
+ void AsyncTaskHandleImpl::Wait() {
+-    mCompleted.wait(false, std::memory_order::acquire);
++    std::unique_lock lock(mCompletedMutex);
++    mCompletedCv.wait(lock, [&] { return mCompleted.load(std::memory_order::acquire); });
+ }
+ 
+ bool AsyncTaskHandleImpl::IsComplete() const {
+@@ -79,8 +80,11 @@ bool AsyncTaskHandleImpl::IsComplete() const {
+ 
+ void AsyncTaskHandleImpl::Complete() {
+     mCallback(mUserdata.ExtractAsDangling());
+-    mCompleted = true;
+-    mCompleted.notify_all();
++    {
++        std::lock_guard lock(mCompletedMutex);
++        mCompleted.store(true, std::memory_order::release);
++    }
++    mCompletedCv.notify_all();
+ }
+ 
+ // AsyncJobHandleImpl
