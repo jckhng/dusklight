@@ -82,6 +82,7 @@
 #include "SDL3/SDL_filesystem.h"
 #include "SDL3/SDL_iostream.h"
 #include "SDL3/SDL_misc.h"
+#include "SDL3/SDL_stdinc.h"
 #include "cxxopts.hpp"
 #include "d/actor/d_a_movie_player.h"
 #include "dusk/audio/DuskAudioSystem.h"
@@ -572,6 +573,40 @@ static void log_build_info() {
     DuskLog.info("Platform: {}", DUSK_PLATFORM_NAME);
 }
 
+static void ApplyPortmasterRenderResolution() {
+    if (SDL_getenv("DUSKLIGHT_PORTMASTER_EGL_FBDEV_SURFACE") == nullptr) {
+        return;
+    }
+
+    const char* width = "320";
+    const char* height = "240";
+    switch (dusk::getSettings().video.portmasterRenderResolution.getValue()) {
+    case 0:
+        width = "640";
+        height = "480";
+        break;
+    case 1:
+        width = "480";
+        height = "360";
+        break;
+    case 3:
+        width = "256";
+        height = "192";
+        break;
+    case 4:
+        width = "160";
+        height = "120";
+        break;
+    case 2:
+    default:
+        break;
+    }
+
+    SDL_setenv_unsafe("DUSKLIGHT_PORTMASTER_RENDER_WIDTH", width, 1);
+    SDL_setenv_unsafe("DUSKLIGHT_PORTMASTER_RENDER_HEIGHT", height, 1);
+    DuskLog.info("PortMaster render resolution: {}x{}", width, height);
+}
+
 // =========================================================================
 // PC ENTRY POINT
 // =========================================================================
@@ -630,6 +665,7 @@ int game_main(int argc, char* argv[]) {
         dusk::resetForSpeedrunMode();
     }
     ApplyCVarOverrides(parsed_arg_options["cvar"]);
+    ApplyPortmasterRenderResolution();
     dusk::crash_reporting::initialize();
     dusk::crash_handler::install();
     PADSetDefaultMapping(&defaultPadMapping, PAD_TYPE_STANDARD);

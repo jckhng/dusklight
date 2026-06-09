@@ -23,7 +23,327 @@ Can Dusklight run on Linux ARM64 using the OpenGL ES backend instead of Vulkan?
 
 ## Current conclusion
 
-This is **not obviously impossible**. It is worth a spike.
+This is **working as a rough PortMaster test port**, not just a feasibility
+spike. Dusklight can build for Linux aarch64, launch through PortMaster, load
+user-provided game data, enter gameplay, and run on the RG35XX H / muOS /
+Mali-G31 stack.
+
+It is still not smooth. Heavy village scenes remain around low-double-digit FPS
+on the RG35XX H, while lighter/indoor scenes can be much closer to the 30 FPS
+pacing cap. The current work is therefore performance and compatibility
+hardening, not first-boot enablement.
+
+## Current 2026-06-09 Handoff
+
+This section merges the newer `dusklight_vertex_texture_handoff.md` notes into
+this canonical PortMaster handoff.
+
+Current graphics path:
+
+```text
+Dusklight
+  -> Aurora GX
+  -> WebGPU/Dawn OpenGLES
+  -> Mali EGL/fbdev native-window surface
+  -> SDL offscreen video driver for input/window bootstrap
+```
+
+Important current paths:
+
+```text
+Launcher:
+  /mnt/mmc/ROMS/Ports/dusklight.sh
+
+Payload:
+  /mnt/mmc/ports/dusklight
+
+Binary:
+  /mnt/mmc/ports/dusklight/dusklight.aarch64
+
+Runtime log:
+  /mnt/mmc/ports/dusklight/log.txt
+```
+
+Do not use `/roms/ports` on the RG35XX H / muOS test setup. It has been stale
+or wrong during testing.
+
+Current launcher defaults:
+
+```text
+DUSKLIGHT_PORTMASTER_LOW_SPEC=1
+DUSKLIGHT_PORTMASTER_EGL_FBDEV_SURFACE=1
+DUSKLIGHT_PORTMASTER_RENDER_WIDTH=320
+DUSKLIGHT_PORTMASTER_RENDER_HEIGHT=240
+DUSKLIGHT_PORTMASTER_NOINDEX_TRIANGLES=1
+DUSKLIGHT_PORTMASTER_STRIP_TOPOLOGY=1
+DUSKLIGHT_PORTMASTER_BATCH_STRIPS=1
+DUSKLIGHT_PORTMASTER_BATCH_QUADS=1
+DUSKLIGHT_PORTMASTER_DISABLE_DEPTH_PEEK=1
+DUSKLIGHT_PORTMASTER_SAFE_PACING_FPS=30
+DUSKLIGHT_PORTMASTER_SAFE_PACING_MAX_TICKS=4
+SDL_VIDEODRIVER=offscreen
+```
+
+### What Actually Unblocked It
+
+The original feasibility question was whether Dawn OpenGLES could build and run
+on Linux aarch64 / muOS. That now works. The harder runtime blocker became
+Aurora GX's use of vertex-stage storage buffers.
+
+The Mali GLES stack reports:
+
+```text
+GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS = 0
+```
+
+That made the original GX vertex-fetch shaders fail with:
+
+```text
+The number of vertex shader storage blocks is greater than the maximum number allowed (0)
+```
+
+The working compatibility path is texture-backed vertex fetch. Compact GX
+vertex stream/array data is uploaded to texture-like storage and fetched with
+vertex-stage texture loads instead of `var<storage>` buffers. This is slower
+than true vertex buffers/storage buffers, but it runs on Mali GLES and avoids
+generic CPU expansion for every draw.
+
+### Biggest Performance Win So Far
+
+Triangle-strip batching was the biggest practical playability gain.
+
+The important GX changes are:
+
+```text
+DUSKLIGHT_PORTMASTER_STRIP_TOPOLOGY=1
+DUSKLIGHT_PORTMASTER_BATCH_STRIPS=1
+DUSKLIGHT_PORTMASTER_NOINDEX_TRIANGLES=1
+primitive/index pattern reuse
+```
+
+Before strip topology/batching, the port could render but felt much worse
+because many tiny GX draws were submitted separately. Preserving strip topology
+and batching compatible consecutive strips reduced submission pressure enough to
+make route testing viable.
+
+Quad batching exists, but current gameplay profiles show strips are the more
+important heavy-scene primitive. Do not forget this when comparing future
+performance work; strip batching is the major known win.
+
+### Dead Ends / Low-Return Paths
+
+Weston/X11/Xwayland was useful to understand the stack, but it was not the
+portable solution for this port. The direct Mali EGL/fbdev native-window surface
+is the current working path.
+
+The old CPU fbdev presenter proved first pixels, but it was too slow. At
+640x480 it spent hundreds of milliseconds in presentation. Recent logs show
+`fbdev_present_ms=0.0`, so the presenter is no longer the bottleneck.
+
+Broad generic native/CPU vertex expansion produced graphical corruption and did
+not become a reliable performance path. Keep native vertex work targeted to very
+specific known layouts only.
+
+### Recent TEV Deferral Result
+
+BP profiling showed raw writes to TEV color/K-color registers `E2-E7` dominate
+the BP traffic. A safe deferral was added so TEV/K-color writes only force a
+draw split if the next shader actually reads the changed register.
+
+Result:
+
+```text
+gx_bp reg merge-block counts dropped sharply
+raw gx_bp_top E2-E7 writes stayed high
+steady village FPS changed little
+```
+
+Interpretation: TEV register dirtying was real overhead, but not the next big
+performance lever after strip batching.
+
+### Current Bottleneck / Next Work
+
+The current steady heavy-scene cost is still draw submission and state churn.
+Recent village logs show `submit_ms` often around 24-30 ms while presentation is
+effectively zero. After TEV deferral, `gx_dirty[xf]`, texture/state changes, and
+remaining BP changes are more important than TEV register dirtying alone.
+
+Next good measurement:
+
+```text
+Add XF dirty-source instrumentation similar to BP top-register instrumentation.
+Find whether transform/matrix writes are redundant, deferable, or actually used
+by the next draw.
+```
+
+Avoid spending more time on blind primitive culling, TEV-only tweaks, or
+Weston/presenter experiments until the XF/state profile is clearer.
+
+### Current Optimization Protocol
+
+Do not work on these areas while chasing the next performance gain:
+
+```text
+launcher
+presenter
+X11 / Wayland / WestonPack
+controls
+global draw skip
+```
+
+Those paths have either already been stabilized enough for the current test
+package or already consumed enough time without being the active heavy-scene
+bottleneck. Keep the next pass focused on GX work reduction.
+
+Baseline profiling run:
+
+```text
+DUSKLIGHT_PORTMASTER_GX_STATS=1
+current strip/quad batching enabled
+one heavy village route
+```
+
+The run should report:
+
+```text
+top XF dirty sources by count
+which XF dirties block merges
+gx_merge[try/ok/dirty/tex/idx/...]
+top GX layouts by primitive name, fifoStride, desc, draws, fifoBytes
+gx_index cache hit/miss/bytes
+```
+
+Add XF dirty-source instrumentation comparable to the existing BP top-register
+instrumentation before making another optimization decision. The goal is to
+separate real transform/matrix state changes from redundant XF writes that only
+break batching/merging.
+
+Only choose one targeted optimization after that profile:
+
+```text
+1. Defer redundant XF writes if the next draw does not consume them, or if the
+   write is provably unchanged.
+2. Improve strip/quad batching if merge blockers are now understood.
+3. Add a low-spec cull only if a draw-cull A/B profile shows a material gain.
+```
+
+Current optimization order:
+
+```text
+1. Stabilize current test package.
+2. Profile XF/state merge blockers.
+3. Improve strip/quad batching based on counters.
+4. A/B grass/shadow/simple-model culls.
+5. Keep guarded pacing as the playability layer.
+6. Stop if worst scenes remain around 4-5 FPS after those.
+```
+
+Triangle-strip batching/merging reference:
+
+```text
+Launcher flags:
+  packaging/portmaster/aarch64/dusklight.sh
+    DUSKLIGHT_PORTMASTER_STRIP_TOPOLOGY=1
+    DUSKLIGHT_PORTMASTER_BATCH_STRIPS=1
+
+Implementation:
+  extern/aurora/lib/gx/command_processor.cpp
+    build_triangle_strip_topology_indices()
+    build_triangle_strip_batch_topology_indices()
+    handle_draw() strip batch scan for consecutive GX_TRIANGLESTRIP draws
+    adjacent draw merge path, including primitive restart insertion
+
+Pipeline:
+  extern/aurora/lib/gx/gx.cpp
+    TriangleStrip topology + Uint16 strip restart format
+
+Stats:
+  extern/aurora/lib/gx/gx.hpp
+  extern/aurora/lib/gfx/common.cpp
+```
+
+The critical detail is that batching does not combine arbitrary draws. It only
+combines immediately adjacent compatible strip draws with no intervening GX
+state command. The `0xffff` primitive restart marker separates original strips
+inside the combined index stream so triangles do not connect across old draw
+boundaries.
+
+### 2026-06-09 XF Scalar Duplicate Skip
+
+Village profiling with `DUSKLIGHT_PORTMASTER_GX_STATS=1` showed that merge
+blocks were heavily attributed to XF texgen scalar writes:
+
+```text
+gx_xf_block_top[03F,040,050,...]
+0x03F = numTexGens
+0x040 = TexGen config 0
+0x050 = post-transform TexGen 0
+```
+
+A conservative duplicate-write skip was added for independent scalar XF
+registers:
+
+```text
+0x000-0x019
+0x03F-0x05F
+```
+
+Viewport/projection payloads (`0x01A-0x026`) are intentionally excluded because
+they are multi-word state blocks; comparing only the first scalar word could
+skip a real projection/viewport update.
+
+Expected next test:
+
+```text
+DUSKLIGHT_PORTMASTER_GX_STATS=1
+heavy village route
+compare gx_dirty[xf], gx_xf_block[texgen], gx_xf_block_top[03F/040/050],
+gx_merge[try/ok/dirty], and FPS against the previous profile.
+```
+
+Follow-up run after deploying the scalar XF skip showed the skip is active:
+
+```text
+xf_skip often in the hundreds of thousands per 5-second timing window
+gx_xf_block_top no longer dominated only by 03F/040/050
+```
+
+The remaining heavy-scene blockers are mostly real state changes:
+
+```text
+0x000 = position matrix 0
+0x00C = material color 0
+0x078 = texture matrix 0
+0x018 = matrix index A
+0x680 = CP matrix index A synthetic marker
+0x03F = numTexGens, still present but no longer the only story
+```
+
+Representative village samples:
+
+```text
+fps=10.59 gx_merge[try=12575 ok=5512 dirty=5261 line=1802]
+gx_xf_block_top[000:4512,00C:1554,03F:742,400:522,018:274,680:274]
+
+fps=12.90 gx_merge[try=14268 ok=5950 dirty=6108 line=2210]
+gx_xf_block_top[000:5198,00C:1828,03F:853,400:593,00E:268,010:268]
+```
+
+Interpretation:
+
+```text
+The easy redundant-XF path is mostly exhausted.
+Position matrices and material colors are changing for real per object/draw.
+Further large batching gains probably require carrying per-strip/per-vertex
+state through one larger draw, or reducing/culling selected low-spec scene work.
+```
+
+Do not keep broadening scalar XF duplicate skipping unless a new profile shows a
+specific false-dirty source. Projection writes were separately content-checked
+after this run because they were still marked dirty unconditionally, but that is
+expected to be a small cleanup rather than a major FPS gain.
+
+## Original Feasibility Notes
 
 The project is open source and the Android port is not a Java/Kotlin game. It is a minimal SDLActivity wrapper around native C/C++ code. That means the Android port is useful evidence that the native code can build for ARM64.
 
@@ -37,7 +357,10 @@ Dusklight
         -> OpenGLES
 ```
 
-So the hard question is not “can SDL do GLES?” The hard question is whether **Dawn OpenGLES can be built and run on Linux ARM64 / muOS**.
+The early hard question was not “can SDL do GLES?” The hard question was whether
+**Dawn OpenGLES can be built and run on Linux ARM64 / muOS**. That has now been
+answered yes for the current RG35XX H / muOS test device, with the PortMaster
+EGL/fbdev surface patch and texture-backed GX vertex fetch.
 
 ## Repository evidence
 

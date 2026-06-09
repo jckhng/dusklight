@@ -131,6 +131,10 @@ def tail(args: argparse.Namespace, password: str | None) -> None:
     run_interactive(ssh_cmd(args.host, remote_cmd), password)
 
 
+def remote_run(args: argparse.Namespace, password: str | None) -> None:
+    run_interactive(ssh_cmd(args.host, args.remote_cmd), password)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Deploy and inspect Dusklight on a live PortMaster device")
     parser.add_argument("--host", required=True, help="Device IP or hostname, for example 192.168.10.131")
@@ -159,6 +163,10 @@ def main() -> None:
     tail_parser.add_argument("--lines", type=int, default=30)
     tail_parser.add_argument("--pattern", default="")
     tail_parser.set_defaults(func=tail)
+
+    run_parser = subparsers.add_parser("run", help="Run a diagnostic command on the device")
+    run_parser.add_argument("remote_cmd")
+    run_parser.set_defaults(func=remote_run)
 
     args = parser.parse_args()
     args.func(args, args.password)

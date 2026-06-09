@@ -58,6 +58,14 @@ constexpr std::array kFpsOverlayCornerNames = {
     "Bottom Right",
 };
 
+constexpr std::array kPortmasterRenderResolutionNames = {
+    "640 x 480",
+    "480 x 360",
+    "320 x 240",
+    "256 x 192",
+    "160 x 120",
+};
+
 constexpr std::array kInterpolationModes = {
     "Off",
     "Capped",
@@ -795,6 +803,45 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                     "<br/>Display the current framerate in a corner of the screen while playing.");
             });
         leftPane.add_section("Resolution");
+        leftPane.register_control(
+            leftPane.add_select_button({
+                .key = "PortMaster Render Resolution",
+                .getValue =
+                    [] {
+                        const int idx = std::clamp(
+                            getSettings().video.portmasterRenderResolution.getValue(), 0,
+                            static_cast<int>(kPortmasterRenderResolutionNames.size() - 1));
+                        return Rml::String{kPortmasterRenderResolutionNames[idx]};
+                    },
+                .isModified =
+                    [] {
+                        return getSettings().video.portmasterRenderResolution.getValue() !=
+                               getSettings().video.portmasterRenderResolution.getDefaultValue();
+                    },
+            }),
+            rightPane, [](Pane& pane) {
+                for (int i = 0;
+                     i < static_cast<int>(kPortmasterRenderResolutionNames.size()); ++i) {
+                    pane.add_button(
+                            {
+                                .text = kPortmasterRenderResolutionNames[i],
+                                .isSelected =
+                                    [i] {
+                                        return getSettings()
+                                                   .video.portmasterRenderResolution.getValue() ==
+                                               i;
+                                    },
+                            })
+                        .on_pressed([i] {
+                            mDoAud_seStartMenu(kSoundItemChange);
+                            getSettings().video.portmasterRenderResolution.setValue(i);
+                            config::Save();
+                        });
+                }
+                pane.add_rml(
+                    "<br/>Sets the PortMaster handheld render target. Lower resolutions trade "
+                    "sharpness for speed. Changes apply after restarting Dusklight.");
+            });
         graphics_tuner_control(*this, leftPane, rightPane,
             getSettings().game.internalResolutionScale,
             GraphicsTunerProps{

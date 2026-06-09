@@ -20,6 +20,24 @@ The package assumes:
 Do not install or test from `/roms` on this muOS setup. That path has been stale
 or wrong during testing.
 
+## Current Status Snapshot
+
+As of the current PortMaster test build, Dusklight launches, loads user-provided
+game data, enters gameplay, and is playable enough for route testing on the
+RG35XX H. It is still not smooth. Heavy village scenes generally sit around
+low-double-digit FPS, while lighter or indoor scenes can be much better.
+
+The largest practical playability improvement so far came from GX primitive
+work, especially triangle-strip batching. Earlier builds were spending enormous
+time issuing many tiny GX draws. Batching compatible triangle-strip runs,
+keeping strip topology where possible, and reusing generated/indexed primitive
+data reduced draw submission pressure enough to move the port from technical
+demo territory into "rough but testable gameplay" territory.
+
+Do not lose this context: triangle-strip batching was the major win. Later TEV
+register dirty deferral was technically correct and reduced one class of merge
+block, but it did not produce the same visible jump in playability.
+
 ## Renderer Path
 
 Dusklight is not a simple SDL2/GLES renderer. The path is:
@@ -78,9 +96,12 @@ DUSKLIGHT_PORTMASTER_RENDER_HEIGHT=240
 DUSKLIGHT_PORTMASTER_LOW_SPEC=1
 DUSKLIGHT_PORTMASTER_EGL_FBDEV_SURFACE=1
 DUSKLIGHT_PORTMASTER_NOINDEX_TRIANGLES=1
+DUSKLIGHT_PORTMASTER_STRIP_TOPOLOGY=1
+DUSKLIGHT_PORTMASTER_BATCH_STRIPS=1
+DUSKLIGHT_PORTMASTER_BATCH_QUADS=1
 DUSKLIGHT_PORTMASTER_DISABLE_DEPTH_PEEK=1
-DUSKLIGHT_PORTMASTER_DRAW_SKIP=1
-DUSKLIGHT_PORTMASTER_SAFE_PACING_FPS=15
+DUSKLIGHT_PORTMASTER_DRAW_SKIP=0
+DUSKLIGHT_PORTMASTER_SAFE_PACING_FPS=30
 DUSKLIGHT_PORTMASTER_SAFE_PACING_MAX_TICKS=4
 SDL_VIDEODRIVER=offscreen
 ```
@@ -93,6 +114,49 @@ Safe pacing is guarded so it should not run during risky transitions, menus, or
 scene loads. It is a playability hack, not a correctness feature. It helps the
 game feel closer to real time when rendering is below target, but it cannot make
 heavy village scenes truly full speed.
+
+## GX Optimization History
+
+The important GX work so far:
+
+- Texture-backed vertex fetch replaced the failing vertex-stage storage-buffer
+  path on GLES devices whose Mali drivers report zero vertex shader storage
+  blocks.
+- Non-indexed triangle handling and primitive index reuse reduced some CPU-side
+  index generation/upload work.
+- Triangle-strip topology support avoided expanding every strip into standalone
+  triangle lists.
+- Triangle-strip batching combined compatible consecutive strip draws and was
+  the biggest playability gain.
+- Quad batching exists, but current profiles show quads are not usually the main
+  limiting primitive during heavy gameplay. Strips still dominate many expensive
+  scenes.
+- Low-frequency GX timing logs were added to track FPS, CPU frame time, draw
+  counts, upload bytes, merge reasons, primitive mix, batching, reuse, and
+  submit/present timing without per-draw log spam.
+- BP dirty instrumentation showed TEV color/K-color register writes (`E2-E7`)
+  dominate raw BP traffic.
+- TEV register dirty deferral now records TEV/K-color writes without forcing a
+  draw split until the next shader proves it actually reads the changed
+  register. This reduced `gx_bp reg` merge-block counts dramatically, but steady
+  village FPS did not improve much.
+
+The current bottleneck after TEV deferral is still draw submission/state churn,
+not framebuffer presentation. In recent village logs, `fbdev_present_ms` is
+effectively zero, while `submit_ms` is often roughly 24-30 ms in steady heavy
+gameplay. `gx_dirty[xf]`, texture/state changes, and remaining BP changes now
+matter more than TEV register dirtying alone.
+
+Next promising measurement:
+
+```text
+Add XF dirty-source instrumentation similar to BP top-register instrumentation.
+Find whether transform/matrix writes are redundant, deferable, or actually used
+by the next draw.
+```
+
+Avoid spending more time on blind primitive culling or TEV-only work until that
+XF/state profile exists.
 
 ## Input Strategy
 

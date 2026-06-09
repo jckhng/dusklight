@@ -120,6 +120,7 @@ struct UserSettings {
         ConfigVar<bool> enableFpsOverlay;
         ConfigVar<int> fpsOverlayCorner;
         ConfigVar<int> maxFrameRate;
+        ConfigVar<int> portmasterRenderResolution;
     } video;
 
     struct {

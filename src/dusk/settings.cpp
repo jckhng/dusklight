@@ -11,6 +11,7 @@ UserSettings g_userSettings = {
         .enableFpsOverlay {"game.enableFpsOverlay", false},
         .fpsOverlayCorner {"game.fpsOverlayCorner", 0},
         .maxFrameRate {"video.maxFrameRate", 240},
+        .portmasterRenderResolution {"video.portmasterRenderResolution", 2},
     },
 
     .audio = {
@@ -198,6 +199,7 @@ void registerSettings() {
     Register(g_userSettings.video.enableFpsOverlay);
     Register(g_userSettings.video.fpsOverlayCorner);
     Register(g_userSettings.video.maxFrameRate);
+    Register(g_userSettings.video.portmasterRenderResolution);
 
     // Audio
     Register(g_userSettings.audio.masterVolume);
