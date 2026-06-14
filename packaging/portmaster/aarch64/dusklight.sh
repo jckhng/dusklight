@@ -186,15 +186,26 @@ fi
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 export LD_LIBRARY_PATH="$GAMEDIR/lib.${DEVICE_ARCH}:$GAMEDIR/libs.${DEVICE_ARCH}:$GAMEDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+GPTOKEYB_PID=""
+finish_portmaster() {
+  if [ -n "$GPTOKEYB_PID" ]; then
+    kill "$GPTOKEYB_PID" 2>/dev/null || true
+    wait "$GPTOKEYB_PID" 2>/dev/null || true
+    GPTOKEYB_PID=""
+  fi
+
+  if command -v pm_finish >/dev/null 2>&1; then
+    pm_finish
+  fi
+}
+trap finish_portmaster EXIT
+
 RESOLVED_GRAPHICS_MODE="$(resolve_graphics_mode)"
 apply_graphics_mode "$RESOLVED_GRAPHICS_MODE"
 echo "Dusklight PortMaster graphics mode: requested=$DUSKLIGHT_PM_GRAPHICS_MODE resolved=$RESOLVED_GRAPHICS_MODE SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-default}"
 log_platform_info
 
 if [ "$RESOLVED_GRAPHICS_MODE" = "diag" ]; then
-  if command -v pm_finish >/dev/null 2>&1; then
-    pm_finish
-  fi
   exit 0
 fi
 
@@ -210,10 +221,15 @@ if [ ! -x "$BIN" ]; then
   echo "Fatal: expected binary not found or not executable: $BIN"
   echo "DEVICE_ARCH=$DEVICE_ARCH"
   echo "Package should contain: $GAMEDIR/dusklight.aarch64"
-  if command -v pm_finish >/dev/null 2>&1; then
-    pm_finish
-  fi
   exit 1
+fi
+
+if [ -n "${GPTOKEYB:-}" ] && [ -x "$GPTOKEYB" ]; then
+  "$GPTOKEYB" "dusklight.${DEVICE_ARCH}" -c "$GAMEDIR/dusklight.gptk" &
+  GPTOKEYB_PID=$!
+  echo "Started gptokeyb pid=$GPTOKEYB_PID for PortMaster quit combo"
+else
+  echo "Warning: GPTOKEYB is not available; PortMaster quit combo will not work"
 fi
 
 if command -v pm_platform_helper >/dev/null 2>&1; then
@@ -257,7 +273,3 @@ if [ -n "$DVD_PATH" ]; then
 fi
 
 "$BIN" "${DUSKLIGHT_ARGS[@]}"
-
-if command -v pm_finish >/dev/null 2>&1; then
-  pm_finish
-fi
