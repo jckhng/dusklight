@@ -10,6 +10,49 @@ index 1111111..2222222 100644
  #include <cstdint>
  #include <utility>
  
+@@ -41,5 +42,31 @@
+ 
+ namespace dawn::native::opengl {
++
++namespace {
++
++uintptr_t PortmasterParsePointerEnv(const char* name) {
++    const char* value = std::getenv(name);
++    if (value == nullptr || value[0] == '\0') {
++        return 0;
++    }
++    return static_cast<uintptr_t>(std::strtoull(value, nullptr, 0));
++}
++
++bool PortmasterPresentSdl2Shim() {
++    if (std::getenv("DUSKLIGHT_PORTMASTER_SDL2SHIM_EGL_SURFACE") == nullptr) {
++        return false;
++    }
++    const uintptr_t window = PortmasterParsePointerEnv("DUSKLIGHT_PORTMASTER_SDL2SHIM_WINDOW");
++    const uintptr_t swapWindow = PortmasterParsePointerEnv("DUSKLIGHT_PORTMASTER_SDL2SHIM_SWAP_WINDOW");
++    if (window == 0 || swapWindow == 0) {
++        return false;
++    }
++    using SwapWindowFn = void (*)(void*);
++    reinterpret_cast<SwapWindowFn>(swapWindow)(reinterpret_cast<void*>(window));
++    return true;
++}
++
++}  // namespace
+ 
+ // static
+ ResultOrError<Ref<SwapChainEGL>> SwapChainEGL::Create(Device* device,
+@@ -129,7 +154,9 @@ MaybeError SwapChainEGL::PresentImpl() {
+         DAWN_GL_TRY(gl, DeleteFramebuffers(1, &readFbo));
+     }
+ 
+-    egl.SwapBuffers(display, mEGLSurface);
++    if (!PortmasterPresentSdl2Shim()) {
++        egl.SwapBuffers(display, mEGLSurface);
++    }
+ 
+     mTexture->APIDestroy();
+     mTexture = nullptr;
 @@ -156,7 +157,7 @@ ResultOrError<SwapChainTextureInfo> SwapChainEGL::GetCurrentTextureImpl() {
  }
  

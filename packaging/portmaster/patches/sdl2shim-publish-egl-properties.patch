@@ -2,7 +2,7 @@ diff --git a/src/video/sdl2/SDL_sdl2opengles.c b/src/video/sdl2/SDL_sdl2opengles
 index 1111111..2222222 100644
 --- a/src/video/sdl2/SDL_sdl2opengles.c
 +++ b/src/video/sdl2/SDL_sdl2opengles.c
-@@ -30,6 +30,17 @@
+@@ -30,6 +30,19 @@
  #define SDL2_GL_STENCIL_SIZE          7
  #define SDL2_GL_DOUBLEBUFFER          5
  
@@ -11,16 +11,18 @@ index 1111111..2222222 100644
 +#define SDL_PROP_WINDOW_SDL2_BACKEND_EGL_DISPLAY_POINTER "SDL.window.sdl2_backend.egl_display"
 +#define SDL_PROP_WINDOW_SDL2_BACKEND_EGL_SURFACE_POINTER "SDL.window.sdl2_backend.egl_surface"
 +#define SDL_PROP_WINDOW_SDL2_BACKEND_GL_GET_PROC_POINTER "SDL.window.sdl2_backend.gl_get_proc"
++#define SDL_PROP_WINDOW_SDL2_BACKEND_GL_SWAP_WINDOW_POINTER "SDL.window.sdl2_backend.gl_swap_window"
 +#define SDL2_EGL_DRAW 0x3059
 +
 +typedef void *(*SDL2_GL_GetProcAddress_Fn)(const char *);
++typedef void (*SDL2_GL_SwapWindow_Fn)(void *);
 +typedef void *(*SDL2_EGL_GetCurrentDisplay_Fn)(void);
 +typedef void *(*SDL2_EGL_GetCurrentSurface_Fn)(int);
 +
  bool SDL2_GLES_LoadLibrary(SDL_VideoDevice *_this, const char *path)
  {
      if (!SDL2_GL_SetAttribute) {
-@@ -119,6 +130,43 @@ SDL_GLContext SDL2_GLES_CreateContext(SDL_VideoDevice *_this, SDL_Window *window
+@@ -119,5 +132,44 @@ SDL_GLContext SDL2_GLES_CreateContext(SDL_VideoDevice *_this, SDL_Window *window
      }
  
      data->sdl2_gl_context = ctx;
@@ -30,6 +32,8 @@ index 1111111..2222222 100644
 +    SDL_SetPointerProperty(props, SDL_PROP_WINDOW_SDL2_BACKEND_CONTEXT_POINTER, data->sdl2_gl_context);
 +    SDL_SetPointerProperty(props, SDL_PROP_WINDOW_SDL2_BACKEND_GL_GET_PROC_POINTER,
 +                           (void *)(SDL2_GL_GetProcAddress_Fn)SDL2_GL_GetProcAddress);
++    SDL_SetPointerProperty(props, SDL_PROP_WINDOW_SDL2_BACKEND_GL_SWAP_WINDOW_POINTER,
++                           (void *)(SDL2_GL_SwapWindow_Fn)SDL2_GL_SwapWindow);
 +    if (SDL2_GL_MakeCurrent) {
 +        SDL2_GL_MakeCurrent(data->sdl2_window, ctx);
 +    }

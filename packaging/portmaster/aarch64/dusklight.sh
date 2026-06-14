@@ -224,8 +224,16 @@ if [ ! -x "$BIN" ]; then
   exit 1
 fi
 
-if [ -n "${GPTOKEYB:-}" ] && [ -x "$GPTOKEYB" ]; then
-  "$GPTOKEYB" "dusklight.${DEVICE_ARCH}" -c "$GAMEDIR/dusklight.gptk" &
+if [ -x "$controlfolder/gptokeyb2" ]; then
+  env LD_PRELOAD="$controlfolder/libinterpose.${DEVICE_ARCH}.so" "$controlfolder/gptokeyb2" "dusklight.${DEVICE_ARCH}" -c "$GAMEDIR/dusklight.gptk" -Z -H select &
+  GPTOKEYB_PID=$!
+  echo "Started gptokeyb2 pid=$GPTOKEYB_PID for PortMaster quit combo"
+elif [ -n "${GPTOKEYB:-}" ]; then
+  $GPTOKEYB "dusklight.${DEVICE_ARCH}" -c "$GAMEDIR/dusklight.gptk" &
+  GPTOKEYB_PID=$!
+  echo "Started gptokeyb pid=$GPTOKEYB_PID for PortMaster quit combo"
+elif [ -x "$controlfolder/gptokeyb" ]; then
+  "$controlfolder/gptokeyb" "${ESUDOKILL:--1}" "dusklight.${DEVICE_ARCH}" -c "$GAMEDIR/dusklight.gptk" &
   GPTOKEYB_PID=$!
   echo "Started gptokeyb pid=$GPTOKEYB_PID for PortMaster quit combo"
 else
