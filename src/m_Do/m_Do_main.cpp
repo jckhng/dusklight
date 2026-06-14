@@ -574,7 +574,9 @@ static void log_build_info() {
 }
 
 static void ApplyPortmasterRenderResolution() {
-    if (SDL_getenv("DUSKLIGHT_PORTMASTER_EGL_FBDEV_SURFACE") == nullptr) {
+    if (SDL_getenv("DUSKLIGHT_PORTMASTER_EGL_FBDEV_SURFACE") == nullptr &&
+        SDL_getenv("DUSKLIGHT_PORTMASTER_SDL2SHIM_EGL_SURFACE") == nullptr &&
+        SDL_getenv("DUSKLIGHT_PORTMASTER_FORCE_VERTEX_TEXTURE") == nullptr) {
         return;
     }
 

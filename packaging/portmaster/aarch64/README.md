@@ -13,9 +13,32 @@ Expected test package layout:
 - `dusklight/runtime/` for config, saves, logs, and cache
 - `dusklight/lib.${DEVICE_ARCH}/` or `dusklight/libs.${DEVICE_ARCH}/` for bundled shared libraries
 
-The launcher forces the OpenGL ES backend and low-end settings through
+The launcher forces the OpenGL ES renderer and low-end settings through
 `--backend opengles` and repeatable `--cvar` overrides. These overrides are
 transient and do not permanently rewrite the user's config.
+
+Graphics surface/display selection is controlled with:
+
+```sh
+DUSKLIGHT_PM_GRAPHICS_MODE=dawn-sdl2shim
+```
+
+Supported values:
+
+- `dawn-sdl2shim`: use the bundled SDL3 shim over the firmware SDL2 backend and pass the SDL2-created EGL display/surface into Dawn. This is the default compatibility-test path.
+- `auto`: legacy heuristic that prefers the fbdev sentinel path on headless PortMaster firmware with `/dev/fb0`; use `dawn-kmsdrm` only if no fbdev device is present but `/dev/dri/card*` exists; otherwise let SDL choose the default video driver.
+- `dawn-sdl`: do not force `SDL_VIDEODRIVER`; use SDL's default window path.
+- `dawn-wayland`: force `SDL_VIDEODRIVER=wayland`.
+- `dawn-x11`: force `SDL_VIDEODRIVER=x11`.
+- `dawn-kmsdrm`: force `SDL_VIDEODRIVER=kmsdrm`; useful as a diagnostic mode, but Aurora/Dawn currently does not create a Dawn surface from SDL KMSDRM/GBM handles.
+- `dawn-fbdev-sentinel`: force the older PortMaster fbdev sentinel path with `SDL_VIDEODRIVER=offscreen`.
+- `diag`: write platform diagnostics to `log.txt` and exit without launching the game.
+
+For older devices that fail with `No supported adapters`, ask testers to run
+`diag` first and then try `dawn-sdl2shim`. Use `dawn-sdl`, `dawn-wayland` or
+`dawn-x11` only if their firmware provides a display server, and `dawn-kmsdrm`
+only to confirm whether SDL can reach KMSDRM. Keep `dawn-fbdev-sentinel` as the
+playable fallback for firmware where that path is known to work.
 
 For device tests, place a Twilight Princess disc image in `dusklight/assets/`.
 Public PortMaster archives must not redistribute game data.
@@ -54,6 +77,7 @@ Primary expected failure points:
 
 - Dawn/OpenGLES not built into the binary.
 - EGL/GLES shared libraries missing or incompatible on the target firmware.
+- SDL selects a video driver that Aurora cannot currently map to a Dawn surface.
 - SDL3 runtime or game controller mapping issues.
 - Adapter/surface creation succeeds but presentation fails on the device GPU/driver.
 - Runtime memory use exceeds the target device envelope.
