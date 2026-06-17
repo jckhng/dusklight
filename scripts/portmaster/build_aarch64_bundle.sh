@@ -107,7 +107,7 @@ fi
 
 (
     cd "$STAGE_DIR"
-    ZIP_PATH="$OUT_DIR/Dusklight-aarch64-portmaster.zip"
+    ZIP_PATH="$OUT_DIR/dusklight.zip"
     rm -f "$ZIP_PATH"
     if command -v zip >/dev/null 2>&1; then
         zip -r "$ZIP_PATH" dusklight.sh dusklight >/dev/null
@@ -119,4 +119,4 @@ fi
     fi
 )
 
-echo "Built: $OUT_DIR/Dusklight-aarch64-portmaster.zip"
+echo "Built: $OUT_DIR/dusklight.zip"

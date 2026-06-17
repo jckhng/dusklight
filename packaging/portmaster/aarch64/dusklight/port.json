@@ -1,10 +1,11 @@
 {
   "version": 2,
-  "name": "dusklight",
+  "name": "dusklight.zip",
   "items": [
     "dusklight.sh",
-    "dusklight/"
+    "dusklight"
   ],
+  "items_opt": null,
   "attr": {
     "title": "Dusklight",
     "desc": "Fail-fast Linux aarch64 PortMaster package scaffold for the native Dusklight project.",
@@ -16,6 +17,10 @@
     "porter": [
       "jckhng"
     ],
+    "image": {},
+    "rtr": false,
+    "runtime": null,
+    "reqs": [],
     "arch": [
       "aarch64"
     ]
