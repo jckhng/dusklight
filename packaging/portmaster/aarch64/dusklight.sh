@@ -50,7 +50,7 @@ export XDG_DATA_HOME="$RUNTIME_DIR"
 export XDG_CACHE_HOME="$RUNTIME_DIR/cache"
 export XDG_CONFIG_HOME="$RUNTIME_DIR/config"
 
-export DUSKLIGHT_PM_GRAPHICS_MODE="${DUSKLIGHT_PM_GRAPHICS_MODE:-dawn-sdl2shim}"
+export DUSKLIGHT_PM_GRAPHICS_MODE="${DUSKLIGHT_PM_GRAPHICS_MODE:-dawn-sdl2shim-native}"
 export DUSKLIGHT_PORTMASTER_LOW_SPEC=1
 export DUSKLIGHT_PORTMASTER_RENDER_WIDTH=320
 export DUSKLIGHT_PORTMASTER_RENDER_HEIGHT=240
@@ -118,7 +118,7 @@ resolve_graphics_mode() {
         echo "dawn-sdl"
       fi
       ;;
-    dawn-sdl|dawn-wayland|dawn-x11|dawn-kmsdrm|dawn-fbdev-sentinel|dawn-sdl2shim|dawn-sdl2shim-borrow|dawn-sdl2shim-borrow-sdlswap|diag)
+    dawn-sdl|dawn-wayland|dawn-x11|dawn-kmsdrm|dawn-fbdev-sentinel|dawn-sdl2shim|dawn-sdl2shim-native|dawn-sdl2shim-borrow|dawn-sdl2shim-borrow-sdlswap|diag)
       echo "$DUSKLIGHT_PM_GRAPHICS_MODE"
       ;;
     *)
@@ -191,6 +191,17 @@ apply_graphics_mode() {
       unset DUSKLIGHT_PORTMASTER_EGL_FBDEV_SURFACE
       unset DUSKLIGHT_PORTMASTER_SDL2SHIM_EGL_SURFACE
       unset DUSKLIGHT_PORTMASTER_SDL2SHIM_SWAP_PRESENT
+      ;;
+    dawn-sdl2shim-native)
+      export SDL_VIDEODRIVER=sdl2
+      export SDL3SHIM_SDL2_LIB="${SDL3SHIM_SDL2_LIB:-libSDL2-2.0.so.0}"
+      export DUSKLIGHT_PORTMASTER_SDL2SHIM_EGL_SURFACE=1
+      export DUSKLIGHT_PORTMASTER_SDL2SHIM_SWAP_PRESENT=1
+      export DUSKLIGHT_PORTMASTER_FORCE_VERTEX_TEXTURE=1
+      unset DUSKLIGHT_PORTMASTER_NO_SURFACE
+      unset DUSKLIGHT_PORTMASTER_SDL2SHIM_EXTERNAL_PRESENT
+      unset DUSKLIGHT_PORTMASTER_X11_DAWN
+      unset DUSKLIGHT_PORTMASTER_EGL_FBDEV_SURFACE
       ;;
     dawn-sdl2shim-borrow)
       export SDL_VIDEODRIVER=sdl2

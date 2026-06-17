@@ -10,11 +10,27 @@ index 1111111..2222222 100644
  #include <cstdint>
  #include <utility>
  
-@@ -41,5 +42,39 @@
+@@ -41,5 +42,85 @@
  
  namespace dawn::native::opengl {
 +
 +namespace {
++
++struct PortmasterSdl2ShimEglSurface {
++    uint32_t magic;
++    uint32_t version;
++    void* eglDisplay;
++    void* eglSurface;
++    void* sdl2Window;
++    void* sdl2Context;
++    void* glGetProc;
++    void* glMakeCurrent;
++    void* glSwapWindow;
++    void* eglMakeCurrent;
++};
++
++constexpr uint32_t PortmasterSdl2ShimEglSurfaceMagic = 0x44533245;  // DS2E
++constexpr uint32_t PortmasterSdl2ShimEglSurfaceVersion = 1;
 +
 +uintptr_t PortmasterParsePointerEnv(const char* name) {
 +    const char* value = std::getenv(name);
@@ -24,25 +40,55 @@ index 1111111..2222222 100644
 +    return static_cast<uintptr_t>(std::strtoull(value, nullptr, 0));
 +}
 +
++bool PortmasterIsValidSdl2ShimSurface(PortmasterSdl2ShimEglSurface* info) {
++    return info != nullptr && info->magic == PortmasterSdl2ShimEglSurfaceMagic &&
++           info->version == PortmasterSdl2ShimEglSurfaceVersion && info->eglSurface != nullptr;
++}
++
 +bool PortmasterSdl2ShimSwapPresentEnabled() {
 +    const char* value = std::getenv("DUSKLIGHT_PORTMASTER_SDL2SHIM_SWAP_PRESENT");
 +    return value == nullptr || (value[0] != '\0' && value[0] != '0');
 +}
 +
-+bool PortmasterPresentSdl2Shim() {
++PortmasterSdl2ShimEglSurface* PortmasterGetSdl2ShimSurface(Surface* surface) {
 +    if (std::getenv("DUSKLIGHT_PORTMASTER_SDL2SHIM_EGL_SURFACE") == nullptr) {
++        return nullptr;
++    }
++    auto* info = reinterpret_cast<PortmasterSdl2ShimEglSurface*>(
++        PortmasterParsePointerEnv("DUSKLIGHT_PORTMASTER_SDL2SHIM_EGL_SURFACE_INFO"));
++    if (PortmasterIsValidSdl2ShimSurface(info)) {
++        return info;
++    }
++    if (surface->GetType() != Surface::Type::XlibWindow || surface->GetXDisplay() != nullptr ||
++        surface->GetXWindow() == 0) {
++        return nullptr;
++    }
++    info = reinterpret_cast<PortmasterSdl2ShimEglSurface*>(static_cast<uintptr_t>(surface->GetXWindow()));
++    if (!PortmasterIsValidSdl2ShimSurface(info)) {
++        return nullptr;
++    }
++    return info;
++}
++
++bool PortmasterPresentSdl2Shim(PortmasterSdl2ShimEglSurface* info) {
++    if (info == nullptr || !PortmasterSdl2ShimSwapPresentEnabled()) {
 +        return false;
 +    }
-+    if (!PortmasterSdl2ShimSwapPresentEnabled()) {
-+        return false;
-+    }
-+    const uintptr_t window = PortmasterParsePointerEnv("DUSKLIGHT_PORTMASTER_SDL2SHIM_WINDOW");
-+    const uintptr_t swapWindow = PortmasterParsePointerEnv("DUSKLIGHT_PORTMASTER_SDL2SHIM_SWAP_WINDOW");
-+    if (window == 0 || swapWindow == 0) {
-+        return false;
-+    }
++    using MakeCurrentFn = int (*)(void*, void*);
++    using EglMakeCurrentFn = unsigned int (*)(void*, void*, void*, void*);
 +    using SwapWindowFn = void (*)(void*);
-+    reinterpret_cast<SwapWindowFn>(swapWindow)(reinterpret_cast<void*>(window));
++    if (info->glMakeCurrent != nullptr && info->sdl2Window != nullptr && info->sdl2Context != nullptr) {
++        reinterpret_cast<MakeCurrentFn>(info->glMakeCurrent)(info->sdl2Window, info->sdl2Context);
++    }
++    if (info->eglMakeCurrent != nullptr && info->eglDisplay != nullptr && info->eglSurface != nullptr &&
++        info->sdl2Context != nullptr) {
++        reinterpret_cast<EglMakeCurrentFn>(info->eglMakeCurrent)(info->eglDisplay, info->eglSurface,
++                                                                 info->eglSurface, info->sdl2Context);
++    }
++    if (info->glSwapWindow == nullptr || info->sdl2Window == nullptr) {
++        return false;
++    }
++    reinterpret_cast<SwapWindowFn>(info->glSwapWindow)(info->sdl2Window);
 +    return true;
 +}
 +
@@ -50,18 +96,28 @@ index 1111111..2222222 100644
  
  // static
  ResultOrError<Ref<SwapChainEGL>> SwapChainEGL::Create(Device* device,
-@@ -129,7 +154,9 @@ MaybeError SwapChainEGL::PresentImpl() {
+@@ -108,6 +173,8 @@ MaybeError SwapChainEGL::Initialize(SwapChainBase* previousSwapChain) {
+             SwapChainEGL* previousEGLSwapChain =
+                 reinterpret_cast<SwapChainEGL*>(ToBackend(previousSwapChain));
+             std::swap(previousEGLSwapChain->mEGLSurface, mEGLSurface);
++            std::swap(previousEGLSwapChain->mOwnsEGLSurface, mOwnsEGLSurface);
++            std::swap(previousEGLSwapChain->mPortmasterSdl2ShimSurface, mPortmasterSdl2ShimSurface);
+         }
+ 
+         previousSwapChain->DetachFromSurface();
+@@ -129,7 +196,10 @@ MaybeError SwapChainEGL::PresentImpl() {
          DAWN_GL_TRY(gl, DeleteFramebuffers(1, &readFbo));
      }
  
 -    egl.SwapBuffers(display, mEGLSurface);
-+    if (!PortmasterPresentSdl2Shim()) {
++    if (!PortmasterPresentSdl2Shim(
++            static_cast<PortmasterSdl2ShimEglSurface*>(mPortmasterSdl2ShimSurface))) {
 +        egl.SwapBuffers(display, mEGLSurface);
 +    }
  
      mTexture->APIDestroy();
      mTexture = nullptr;
-@@ -156,7 +157,7 @@ ResultOrError<SwapChainTextureInfo> SwapChainEGL::GetCurrentTextureImpl() {
+@@ -156,7 +225,7 @@ ResultOrError<SwapChainTextureInfo> SwapChainEGL::GetCurrentTextureImpl() {
  }
  
  void SwapChainEGL::DetachFromSurfaceImpl() {
@@ -70,38 +126,36 @@ index 1111111..2222222 100644
          Device* device = ToBackend(GetDevice());
          device->GetEGL(false).DestroySurface(device->GetEGLDisplay(), mEGLSurface);
          mEGLSurface = EGL_NO_SURFACE;
-@@ -169,6 +170,7 @@ void SwapChainEGL::DetachFromSurfaceImpl() {
+@@ -169,6 +238,9 @@ void SwapChainEGL::DetachFromSurfaceImpl() {
          mTexture = nullptr;
          mTextureView = nullptr;
      }
 +    mEGLSurface = EGL_NO_SURFACE;
++    mOwnsEGLSurface = true;
++    mPortmasterSdl2ShimSurface = nullptr;
  }
  
  MaybeError SwapChainEGL::CreateEGLSurface(const DisplayEGL* display) {
-@@ -176,6 +178,15 @@ MaybeError SwapChainEGL::CreateEGLSurface(const DisplayEGL* display) {
+@@ -176,6 +248,12 @@ MaybeError SwapChainEGL::CreateEGLSurface(const DisplayEGL* display) {
  
      EGLConfig config = display->ChooseConfig(EGL_WINDOW_BIT, GetFormat());
      if (config == kNoConfig) {
-+        Surface* maybeBorrowedSurface = GetSurface();
-+        if (std::getenv("DUSKLIGHT_PORTMASTER_SDL2SHIM_EGL_SURFACE") != nullptr &&
-+            maybeBorrowedSurface->GetType() == Surface::Type::XlibWindow &&
-+            maybeBorrowedSurface->GetXDisplay() == nullptr && maybeBorrowedSurface->GetXWindow() != 0) {
-+            mEGLSurface =
-+                reinterpret_cast<EGLSurface>(static_cast<uintptr_t>(maybeBorrowedSurface->GetXWindow()));
++        if (PortmasterSdl2ShimEglSurface* info = PortmasterGetSdl2ShimSurface(GetSurface())) {
++            mPortmasterSdl2ShimSurface = info;
++            mEGLSurface = reinterpret_cast<EGLSurface>(info->eglSurface);
 +            mOwnsEGLSurface = false;
 +            return {};
 +        }
          return DAWN_FORMAT_INTERNAL_ERROR("Couldn't find an EGLConfig for %s on %s.", GetFormat(),
                                            GetSurface());
      }
-@@ -198,6 +209,14 @@ MaybeError SwapChainEGL::CreateEGLSurface(const DisplayEGL* display) {
+@@ -198,6 +277,13 @@ MaybeError SwapChainEGL::CreateEGLSurface(const DisplayEGL* display) {
  
      // Note that we cannot use ResultOrError<EGLSurface> as it might not have the required alignment
      // constraints.
-+    if (std::getenv("DUSKLIGHT_PORTMASTER_SDL2SHIM_EGL_SURFACE") != nullptr &&
-+        surface->GetType() == Surface::Type::XlibWindow && surface->GetXDisplay() == nullptr &&
-+        surface->GetXWindow() != 0) {
-+        mEGLSurface = reinterpret_cast<EGLSurface>(static_cast<uintptr_t>(surface->GetXWindow()));
++    if (PortmasterSdl2ShimEglSurface* info = PortmasterGetSdl2ShimSurface(surface)) {
++        mPortmasterSdl2ShimSurface = info;
++        mEGLSurface = reinterpret_cast<EGLSurface>(info->eglSurface);
 +        mOwnsEGLSurface = false;
 +        return {};
 +    }
@@ -113,11 +167,11 @@ diff --git a/src/dawn/native/opengl/SwapChainEGL.h b/src/dawn/native/opengl/Swap
 index 3333333..4444444 100644
 --- a/src/dawn/native/opengl/SwapChainEGL.h
 +++ b/src/dawn/native/opengl/SwapChainEGL.h
-@@ -55,6 +55,7 @@ class SwapChainEGL final : public SwapChainBase {
-     MaybeError CreateEGLSurface(const DisplayEGL* display);
+@@ -55,5 +55,7 @@ class SwapChainEGL final : public SwapChainBase {
  
      EGLSurface mEGLSurface = EGL_NO_SURFACE;
 +    bool mOwnsEGLSurface = true;
++    void* mPortmasterSdl2ShimSurface = nullptr;
      Ref<Texture> mTexture;
      Ref<TextureView> mTextureView;
  
