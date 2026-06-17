@@ -1,8 +1,6 @@
-diff --git a/src/dawn/native/opengl/SwapChainEGL.cpp b/src/dawn/native/opengl/SwapChainEGL.cpp
-index 1111111..2222222 100644
 --- a/src/dawn/native/opengl/SwapChainEGL.cpp
 +++ b/src/dawn/native/opengl/SwapChainEGL.cpp
-@@ -23,6 +23,7 @@
+@@ -27,6 +27,7 @@
  
  #include "dawn/native/opengl/SwapChainEGL.h"
  
@@ -10,10 +8,10 @@ index 1111111..2222222 100644
  #include <cstdint>
  #include <utility>
  
-@@ -41,5 +42,85 @@
+@@ -41,6 +42,102 @@
  
  namespace dawn::native::opengl {
-+
+ 
 +namespace {
 +
 +struct PortmasterSdl2ShimEglSurface {
@@ -50,6 +48,14 @@ index 1111111..2222222 100644
 +    return value == nullptr || (value[0] != '\0' && value[0] != '0');
 +}
 +
++EGLDisplay PortmasterSdl2ShimDisplayOrDefault(PortmasterSdl2ShimEglSurface* info,
++                                              EGLDisplay fallback) {
++    if (info != nullptr && info->eglDisplay != nullptr) {
++        return reinterpret_cast<EGLDisplay>(info->eglDisplay);
++    }
++    return fallback;
++}
++
 +PortmasterSdl2ShimEglSurface* PortmasterGetSdl2ShimSurface(Surface* surface) {
 +    if (std::getenv("DUSKLIGHT_PORTMASTER_SDL2SHIM_EGL_SURFACE") == nullptr) {
 +        return nullptr;
@@ -70,13 +76,12 @@ index 1111111..2222222 100644
 +    return info;
 +}
 +
-+bool PortmasterPresentSdl2Shim(PortmasterSdl2ShimEglSurface* info) {
-+    if (info == nullptr || !PortmasterSdl2ShimSwapPresentEnabled()) {
++bool PortmasterMakeCurrentSdl2Shim(PortmasterSdl2ShimEglSurface* info) {
++    if (info == nullptr) {
 +        return false;
 +    }
 +    using MakeCurrentFn = int (*)(void*, void*);
 +    using EglMakeCurrentFn = unsigned int (*)(void*, void*, void*, void*);
-+    using SwapWindowFn = void (*)(void*);
 +    if (info->glMakeCurrent != nullptr && info->sdl2Window != nullptr && info->sdl2Context != nullptr) {
 +        reinterpret_cast<MakeCurrentFn>(info->glMakeCurrent)(info->sdl2Window, info->sdl2Context);
 +    }
@@ -85,6 +90,15 @@ index 1111111..2222222 100644
 +        reinterpret_cast<EglMakeCurrentFn>(info->eglMakeCurrent)(info->eglDisplay, info->eglSurface,
 +                                                                 info->eglSurface, info->sdl2Context);
 +    }
++    return true;
++}
++
++bool PortmasterPresentSdl2Shim(PortmasterSdl2ShimEglSurface* info) {
++    if (info == nullptr || !PortmasterSdl2ShimSwapPresentEnabled()) {
++        return false;
++    }
++    using SwapWindowFn = void (*)(void*);
++    PortmasterMakeCurrentSdl2Shim(info);
 +    if (info->glSwapWindow == nullptr || info->sdl2Window == nullptr) {
 +        return false;
 +    }
@@ -93,10 +107,11 @@ index 1111111..2222222 100644
 +}
 +
 +}  // namespace
- 
++
  // static
  ResultOrError<Ref<SwapChainEGL>> SwapChainEGL::Create(Device* device,
-@@ -108,6 +173,8 @@ MaybeError SwapChainEGL::Initialize(SwapChainBase* previousSwapChain) {
+                                                       Surface* surface,
+@@ -80,6 +177,8 @@
              SwapChainEGL* previousEGLSwapChain =
                  reinterpret_cast<SwapChainEGL*>(ToBackend(previousSwapChain));
              std::swap(previousEGLSwapChain->mEGLSurface, mEGLSurface);
@@ -105,19 +120,43 @@ index 1111111..2222222 100644
          }
  
          previousSwapChain->DetachFromSurface();
-@@ -129,7 +196,10 @@ MaybeError SwapChainEGL::PresentImpl() {
+@@ -100,12 +199,17 @@
+ 
+ MaybeError SwapChainEGL::PresentImpl() {
+     Device* device = ToBackend(GetDevice());
+-    EGLDisplay display = device->GetEGLDisplay();
++    auto* portmasterSurface =
++        static_cast<PortmasterSdl2ShimEglSurface*>(mPortmasterSdl2ShimSurface);
++    EGLDisplay display = PortmasterSdl2ShimDisplayOrDefault(portmasterSurface, device->GetEGLDisplay());
+     const EGLFunctions& egl = device->GetEGL(false);
+ 
+     // Do the reverse-Y blit from the fake surface texture to the default framebuffer.
+-    {
++    auto blitToSurface = [&]() -> MaybeError {
+         auto surfaceCurrent = device->GetContext()->SetCurrentSurfaceScope(mEGLSurface);
++        if (portmasterSurface != nullptr) {
++            PortmasterMakeCurrentSdl2Shim(portmasterSurface);
++        }
+         EGLint surfaceWidth;
+         EGLint surfaceHeight;
+         DAWN_TRY(CheckEGL(egl, egl.QuerySurface(display, mEGLSurface, EGL_WIDTH, &surfaceWidth),
+@@ -127,9 +231,13 @@
+                                         surfaceWidth, 0, GL_COLOR_BUFFER_BIT, GL_LINEAR));
+ 
          DAWN_GL_TRY(gl, DeleteFramebuffers(1, &readFbo));
-     }
+-    }
++        return {};
++    };
++    DAWN_TRY(blitToSurface());
  
 -    egl.SwapBuffers(display, mEGLSurface);
-+    if (!PortmasterPresentSdl2Shim(
-+            static_cast<PortmasterSdl2ShimEglSurface*>(mPortmasterSdl2ShimSurface))) {
++    if (!PortmasterPresentSdl2Shim(portmasterSurface)) {
 +        egl.SwapBuffers(display, mEGLSurface);
 +    }
  
      mTexture->APIDestroy();
      mTexture = nullptr;
-@@ -156,7 +225,7 @@ ResultOrError<SwapChainTextureInfo> SwapChainEGL::GetCurrentTextureImpl() {
+@@ -156,7 +264,7 @@
  }
  
  void SwapChainEGL::DetachFromSurfaceImpl() {
@@ -126,7 +165,7 @@ index 1111111..2222222 100644
          Device* device = ToBackend(GetDevice());
          device->GetEGL(false).DestroySurface(device->GetEGLDisplay(), mEGLSurface);
          mEGLSurface = EGL_NO_SURFACE;
-@@ -169,6 +238,9 @@ void SwapChainEGL::DetachFromSurfaceImpl() {
+@@ -167,6 +275,9 @@
          mTexture = nullptr;
          mTextureView = nullptr;
      }
@@ -136,7 +175,7 @@ index 1111111..2222222 100644
  }
  
  MaybeError SwapChainEGL::CreateEGLSurface(const DisplayEGL* display) {
-@@ -176,6 +248,12 @@ MaybeError SwapChainEGL::CreateEGLSurface(const DisplayEGL* display) {
+@@ -174,6 +285,12 @@
  
      EGLConfig config = display->ChooseConfig(EGL_WINDOW_BIT, GetFormat());
      if (config == kNoConfig) {
@@ -149,7 +188,7 @@ index 1111111..2222222 100644
          return DAWN_FORMAT_INTERNAL_ERROR("Couldn't find an EGLConfig for %s on %s.", GetFormat(),
                                            GetSurface());
      }
-@@ -198,6 +277,13 @@ MaybeError SwapChainEGL::CreateEGLSurface(const DisplayEGL* display) {
+@@ -198,6 +315,13 @@
  
      // Note that we cannot use ResultOrError<EGLSurface> as it might not have the required alignment
      // constraints.
@@ -163,11 +202,10 @@ index 1111111..2222222 100644
      auto TryCreateSurface = [&]() -> MaybeError {
          switch (surface->GetType()) {
  #if DAWN_PLATFORM_IS(ANDROID)
-diff --git a/src/dawn/native/opengl/SwapChainEGL.h b/src/dawn/native/opengl/SwapChainEGL.h
-index 3333333..4444444 100644
 --- a/src/dawn/native/opengl/SwapChainEGL.h
 +++ b/src/dawn/native/opengl/SwapChainEGL.h
-@@ -55,5 +55,7 @@ class SwapChainEGL final : public SwapChainBase {
+@@ -55,6 +55,8 @@
+     MaybeError CreateEGLSurface(const DisplayEGL* display);
  
      EGLSurface mEGLSurface = EGL_NO_SURFACE;
 +    bool mOwnsEGLSurface = true;
