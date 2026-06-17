@@ -25,7 +25,9 @@ DUSKLIGHT_PM_GRAPHICS_MODE=dawn-sdl2shim
 
 Supported values:
 
-- `dawn-sdl2shim`: use the bundled SDL3 shim over the firmware SDL2 backend and pass the SDL2-created EGL display/surface into Dawn. This is the default compatibility-test path.
+- `dawn-sdl2shim`: use the bundled SDL3 shim over the firmware SDL2 backend, render Dawn offscreen without a WebGPU swapchain surface, then present the final frame through an SDL2-owned GLES context. This is the default compatibility-test path.
+- `dawn-sdl2shim-borrow`: old SDL2-shim mode that borrows SDL2's `EGLSurface` into Dawn but does not use the SDL swap hook. Keep for A/B testing only.
+- `dawn-sdl2shim-borrow-sdlswap`: alpha6-style SDL2-shim mode that borrows SDL2's `EGLSurface` into Dawn and calls SDL's swap function. Keep for A/B testing only.
 - `auto`: legacy heuristic that prefers the fbdev sentinel path on headless PortMaster firmware with `/dev/fb0`; use `dawn-kmsdrm` only if no fbdev device is present but `/dev/dri/card*` exists; otherwise let SDL choose the default video driver.
 - `dawn-sdl`: do not force `SDL_VIDEODRIVER`; use SDL's default window path.
 - `dawn-wayland`: force `SDL_VIDEODRIVER=wayland`.
@@ -48,7 +50,7 @@ Public PortMaster archives must not redistribute game data.
 Build a fresh test package:
 
 ```sh
-scripts/portmaster/build_docker_aarch64_bundle.sh --out-dir artifacts/portmaster-test
+scripts/portmaster/build_docker_aarch64_focal_sdl2shim_bundle.sh --out-dir artifacts/portmaster-test
 ```
 
 Deploy the staged binary and launcher to a live muOS/PortMaster device:
@@ -70,14 +72,11 @@ PM_PASSWORD=<device-password> scripts/portmaster/live_device.py --host <device-i
 PM_PASSWORD=<device-password> scripts/portmaster/live_device.py --host <device-ip> tail
 ```
 
-Use `deploy --script-only` when only launcher defaults changed. This avoids
-copying the full binary during quick runtime-toggle tests.
-
 Primary expected failure points:
 
 - Dawn/OpenGLES not built into the binary.
 - EGL/GLES shared libraries missing or incompatible on the target firmware.
-- SDL selects a video driver that Aurora cannot currently map to a Dawn surface.
+- Dawn no-surface OpenGLES adapter creation fails on the target firmware.
+- SDL2-shim GL context creation or `SDL_GL_SwapWindow` presentation fails.
 - SDL3 runtime or game controller mapping issues.
-- Adapter/surface creation succeeds but presentation fails on the device GPU/driver.
 - Runtime memory use exceeds the target device envelope.

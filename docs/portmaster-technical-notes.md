@@ -48,18 +48,27 @@ Dusklight -> Aurora GX -> WebGPU API -> Dawn OpenGLES backend -> Mali EGL/GLES
 
 The original Weston/fbdev experiments proved useful for presentation, but the
 CPU fbdev copy path was too slow. At 640x480 it spent roughly 380 ms per present;
-at lower resolutions it was still a major frame-time cost. The current package
-uses a Mali EGL/fbdev native-window path instead.
+at lower resolutions it was still a major frame-time cost.
 
-To make that durable, the Docker build applies:
+The current compatibility-test package defaults to the bmdhacks SDL2 backend:
 
 ```text
-packaging/portmaster/patches/dawn-portmaster-fbdev-surface.patch
+DUSKLIGHT_PM_GRAPHICS_MODE=dawn-sdl2shim
+SDL_VIDEODRIVER=sdl2
+DUSKLIGHT_PORTMASTER_NO_SURFACE=1
+DUSKLIGHT_PORTMASTER_SDL2SHIM_EXTERNAL_PRESENT=1
 ```
 
-That patch lets Dawn accept an Xlib surface descriptor with a null display as a
-PortMaster sentinel, then passes the stored native window handle directly to
-`eglCreateWindowSurface`. This avoids maintaining an ad hoc generated-tree edit.
+In this mode Dawn does not borrow the SDL2 `EGLSurface` as a WebGPU swapchain
+surface. Aurora renders offscreen through Dawn, reads back the final present
+texture, uploads it to an SDL2-owned GLES texture, draws a fullscreen quad, and
+calls `SDL_GL_SwapWindow`. This is slower than a true GPU-to-GPU present path,
+but it is designed to avoid the `EGL_BAD_SURFACE` failures seen when Dawn tried
+to treat the SDL2-owned surface as its own swapchain surface.
+
+The older fbdev sentinel and SDL2 borrowed-surface modes remain available as
+fallback/A-B paths. They are useful for regression isolation, but they should
+not be described as the preferred compatibility direction.
 
 ## GLES Vertex Limitation
 
