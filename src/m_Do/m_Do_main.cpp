@@ -51,6 +51,7 @@
 #include <system_error>
 #include <thread>
 #include "SSystem/SComponent/c_API.h"
+#include "dusk/android_frame_rate.hpp"
 #include "dusk/app_info.hpp"
 #include "dusk/crash_handler.h"
 #include "dusk/crash_reporting.h"
@@ -69,6 +70,7 @@
 #include "dusk/ui/overlay.hpp"
 #include "dusk/ui/prelaunch.hpp"
 #include "dusk/ui/preset.hpp"
+#include "dusk/ui/touch_controls.hpp"
 #include "dusk/ui/ui.hpp"
 #include "version.h"
 
@@ -79,7 +81,6 @@
 #include <dolphin/dvd.h>
 
 #include "SDL3/SDL_init.h"
-#include "SDL3/SDL_filesystem.h"
 #include "SDL3/SDL_iostream.h"
 #include "SDL3/SDL_misc.h"
 #include "SDL3/SDL_stdinc.h"
@@ -322,6 +323,13 @@ void main01(void) {
                 dusk::ui::handle_event(event->sdl);
                 dusk::g_imguiConsole.HandleSDLEvent(event->sdl);
                 break;
+            case AURORA_WINDOW_RESIZED:
+                if (dusk::getSettings().video.rememberWindowSize && !dusk::getSettings().video.enableFullscreen) {
+                    dusk::getSettings().video.lastWindowWidth.setValue(event->windowSize.width);
+                    dusk::getSettings().video.lastWindowHeight.setValue(event->windowSize.height);
+                    dusk::config::Save();
+                }
+                break;
             case AURORA_DISPLAY_SCALE_CHANGED:
                 dusk::ImGuiEngine_Initialize(event->windowSize.scale);
                 break;
@@ -398,11 +406,24 @@ void main01(void) {
             mDoAud_Execute();
         }
 
+        if (portmasterDrawThisFrame) {
+            aurora_end_frame();
+        }
+        fpcM_PortmasterEndFrameDecision();
+
+        FrameMark;
+
+#ifdef DUSK_DISCORD
+        dusk::discord::run_callbacks();
+        dusk::discord::update_presence();
+#endif
+
         static Limiter main_loop_limiter;
         static double last_fps_setting = 0.0;
         static Limiter::duration_t target_ns = 0;
 
         if (frameInterpMode == dusk::FrameInterpMode::Capped && !dusk::getTransientSettings().skipFrameRateLimit) {
+            ZoneScopedN("Frame limiter");
             double current_fps = dusk::game_clock::effective_max_frame_rate();
             if (current_fps != last_fps_setting) {
                 last_fps_setting = current_fps;
@@ -414,19 +435,6 @@ void main01(void) {
         } else {
             main_loop_limiter.Reset();
         }
-
-        if (portmasterDrawThisFrame) {
-            aurora_end_frame();
-        }
-        fpcM_PortmasterEndFrameDecision();
-
-
-        FrameMark;
-
-#ifdef DUSK_DISCORD
-        dusk::discord::run_callbacks();
-        dusk::discord::update_presence();
-#endif
     } while (dusk::IsRunning);
 
     exit:;
@@ -560,14 +568,6 @@ static void LanguageInit() {
     selectedLanguage = static_cast<u8>(dusk::getSettings().game.language.getValue());
 }
 
-static std::string asset_path(const char* assetName) {
-    const char* basePath = SDL_GetBasePath();
-    if (basePath != nullptr && basePath[0] != '\0') {
-        return std::string(basePath) + "res/" + assetName;
-    }
-    return std::string("res/") + assetName;
-}
-
 static void log_build_info() {
     DuskLog.info("Build: {} (rev {}, built {}, type {})", DUSK_WC_DESCRIBE, DUSK_WC_REVISION, DUSK_WC_DATE, DUSK_BUILD_TYPE);
     DuskLog.info("Platform: {}", DUSK_PLATFORM_NAME);
@@ -668,15 +668,23 @@ int game_main(int argc, char* argv[]) {
     }
     ApplyCVarOverrides(parsed_arg_options["cvar"]);
     ApplyPortmasterRenderResolution();
+    dusk::android::update_surface_frame_rate();
     dusk::crash_reporting::initialize();
     dusk::crash_handler::install();
     PADSetDefaultMapping(&defaultPadMapping, PAD_TYPE_STANDARD);
 
     {
-        // Load mappings from https://github.com/mdqinc/SDL_GameControllerDB
-        const auto mappingsPath = asset_path("gamecontrollerdb.txt");
-        if (SDL_AddGamepadMappingsFromFile(mappingsPath.c_str()) < 0) {
-            DuskLog.warn("Failed to load gamecontrollerdb.txt: {}", SDL_GetError());
+        const auto mappingsPath = dusk::ConfigPath / "gamecontrollerdb.txt";
+        std::error_code ec;
+        if (std::filesystem::exists(mappingsPath, ec)) {
+            const auto mappingsPathString = dusk::io::fs_path_to_string(mappingsPath);
+            if (SDL_AddGamepadMappingsFromFile(mappingsPathString.c_str()) < 0) {
+                DuskLog.warn("Failed to load gamecontrollerdb.txt from '{}': {}",
+                    mappingsPathString, SDL_GetError());
+            }
+        } else if (ec) {
+            DuskLog.warn("Failed to inspect gamecontrollerdb.txt in data folder '{}': {}",
+                dusk::io::fs_path_to_string(mappingsPath), ec.message());
         }
     }
 
@@ -690,12 +698,25 @@ int game_main(int argc, char* argv[]) {
         config.appName = dusk::AppName;
         config.userPath = reinterpret_cast<const char*>(userPathString.c_str());
         config.cachePath = reinterpret_cast<const char*>(cachePathString.c_str());
+#ifdef DUSK_ASSET_DIR
+        config.resourcesPath = DUSK_ASSET_DIR;
+#endif
         config.vsync = dusk::getSettings().video.enableVsync;
         config.startFullscreen = dusk::getSettings().video.enableFullscreen;
         config.windowPosX = -1;
         config.windowPosY = -1;
-        config.windowWidth = defaultWindowWidth * 2;
-        config.windowHeight = defaultWindowHeight * 2;
+
+        const int lastWindowWidth = dusk::getSettings().video.lastWindowWidth.getValue();
+        const int lastWindowHeight = dusk::getSettings().video.lastWindowHeight.getValue();
+
+        if (dusk::getSettings().video.rememberWindowSize && lastWindowWidth > 0 && lastWindowHeight > 0) {
+            config.windowWidth = lastWindowWidth;
+            config.windowHeight = lastWindowHeight;
+        } else {
+            config.windowWidth = defaultWindowWidth * 2;
+            config.windowHeight = defaultWindowHeight * 2;
+        }
+
         config.desiredBackend = ResolveDesiredBackend(parsed_arg_options);
         config.logCallback = &aurora_log_callback;
         config.logLevel = startupLogLevel;
@@ -756,6 +777,7 @@ int game_main(int argc, char* argv[]) {
     dusk::texture_replacements::reload();
     dusk::ui::initialize();
     dusk::ui::push_document(std::make_unique<dusk::ui::Overlay>(), true, true);
+    dusk::ui::push_document(std::make_unique<dusk::ui::TouchControls>(), false, true);
     dusk::ui::push_document(std::make_unique<dusk::ui::MenuBar>(), false);
 
     // Invalidate a bad saved isoPath so that Dusklight can't get blocked from starting up.
