@@ -120,7 +120,7 @@
          }
  
          previousSwapChain->DetachFromSurface();
-@@ -100,12 +199,17 @@
+@@ -100,18 +199,31 @@
  
  MaybeError SwapChainEGL::PresentImpl() {
      Device* device = ToBackend(GetDevice());
@@ -139,8 +139,26 @@
 +        }
          EGLint surfaceWidth;
          EGLint surfaceHeight;
-         DAWN_TRY(CheckEGL(egl, egl.QuerySurface(display, mEGLSurface, EGL_WIDTH, &surfaceWidth),
-@@ -127,9 +231,13 @@
+-        DAWN_TRY(CheckEGL(egl, egl.QuerySurface(display, mEGLSurface, EGL_WIDTH, &surfaceWidth),
+-                          "getting surface width"));
+-        DAWN_TRY(CheckEGL(egl, egl.QuerySurface(display, mEGLSurface, EGL_HEIGHT, &surfaceHeight),
+-                          "getting surface height"));
++        if (portmasterSurface != nullptr) {
++            // Some PortMaster firmware SDL2 backends expose an EGLSurface that is valid for
++            // make-current/swap, but rejects eglQuerySurface from this Dawn path. The WebGPU
++            // swapchain already owns the configured present extent, so use that for the blit.
++            surfaceWidth = static_cast<EGLint>(GetWidth());
++            surfaceHeight = static_cast<EGLint>(GetHeight());
++        } else {
++            DAWN_TRY(CheckEGL(egl, egl.QuerySurface(display, mEGLSurface, EGL_WIDTH, &surfaceWidth),
++                              "getting surface width"));
++            DAWN_TRY(CheckEGL(egl, egl.QuerySurface(display, mEGLSurface, EGL_HEIGHT, &surfaceHeight),
++                              "getting surface height"));
++        }
+ 
+         const OpenGLFunctions& gl = device->GetGL();
+ 
+@@ -127,9 +240,13 @@
                                          surfaceWidth, 0, GL_COLOR_BUFFER_BIT, GL_LINEAR));
  
          DAWN_GL_TRY(gl, DeleteFramebuffers(1, &readFbo));
