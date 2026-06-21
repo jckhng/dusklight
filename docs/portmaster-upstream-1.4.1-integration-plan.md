@@ -234,3 +234,133 @@ Likely limitation:
 
 Do not treat this as a release merge until the experiment branch is tested on
 the RG35XX H / muOS baseline device.
+
+## Execution Record
+
+### 2026-06-19
+
+Experiment branch:
+
+```text
+portmaster-upstream-1.4.1-exp
+```
+
+Top-level upstream merge:
+
+```text
+9b7f84a747 Merge upstream Dusklight 1.4.1 for PortMaster experiment
+```
+
+Aurora result:
+
+- A direct/full Aurora merge was attempted and abandoned as too risky for this
+  pass. The upstream renderer/platform rewrite conflicts heavily with the
+  PortMaster SDL2-shim and GLES work.
+- The working path is a minimal Aurora backport branch based on the known-good
+  PortMaster SDL2-shim native bridge.
+- The minimal backport currently includes:
+  - `GX_AUTO` / sized draws for upstream JPA particle code.
+  - Upstream display-list reader/optimizer files: `include/aurora/dl.hpp` and
+    `lib/gx/dl.cpp`.
+  - Aurora command compatibility aliases used by upstream display-list code.
+  - `GX_AURORA_DRAW_SIZED` and `GX_AURORA_DRAW_INDEXED` command decoding.
+  - FIFO `patch_u32()` support for filling in sized-draw payload lengths.
+  - `aurora_get_fps()` for upstream overlay/UI code.
+- The focal SDL2-shim build now links after cleaning stale fmt/Dawn objects.
+  The build cache had mixed fmt v11 headers with older fmt v12 object files
+  from branch experiments.
+
+Build command used:
+
+```sh
+docker run --rm -v "$PWD:/work" dusklight-portmaster-aarch64-focal-sdl2shim \
+  bash -lc 'cd /work/build/portmaster-aarch64-focal-sdl2shim; cmake --build . --target dusklight -j$(nproc)'
+```
+
+Current validation status:
+
+- Compile/link: passed.
+- Device runtime test: not yet done on RG35XX H / muOS.
+- Release readiness: not ready until the experiment binary is deployed and
+  checked for launch, controls, video, and graphics correctness.
+
+Runtime risks to test first:
+
+- `GX_AURORA_DRAW_INDEXED` is a new backport path. It should reduce draw work
+  when upstream display-list optimization emits indexed packets, but it needs
+  visual validation on real hardware.
+- `GX_AURORA_DRAW_SIZED` routes through the existing draw payload handler. If
+  graphics corruption appears around particles/effects, disable merge scanning
+  for sized packets before testing broader optimizations.
+- This experiment is primarily for performance. It is not expected to fix
+  ArkOS/Knulli/TrimUI CRTC or EGL surface failures by itself.
+
+Next steps:
+
+1. Package/deploy the experiment build only to RG35XX H / muOS first.
+2. Compare startup time, village FPS, and graphics correctness against alpha10.
+3. If it regresses launch/video/input, abandon the minimal backport and keep
+   alpha10 as baseline.
+4. If it works, collect `DUSKLIGHT_PORTMASTER_GX_STATS=1` before considering
+   more upstream Aurora changes.
+
+### 2026-06-20
+
+Upstream Aurora performance review:
+
+- The safest useful Aurora performance backport remains the display-list
+  optimizer plus `GX_AUTO` / `GX_AURORA_DRAW_INDEXED` compatibility.
+- The larger upstream render-worker/RmlUi/pipeline-cache work is broad and
+  risky for the PortMaster SDL2-shim surface path. It is not a good next merge
+  target unless the display stack is revalidated from scratch.
+- The current village profile still appears dominated by the PortMaster
+  texture-vertex GLES path. `gx_merge[...]` is active, but `gx_batch[...]` and
+  `gx_reuse[...]` have stayed at zero in the recent logs.
+
+Instrumentation added:
+
+```text
+extern/aurora/include/aurora/dl.hpp
+extern/aurora/lib/gx/dl.cpp
+extern/aurora/lib/gfx/common.cpp
+```
+
+The existing `PortMaster timing` line now includes:
+
+```text
+dl_opt[try=... ok=... fail=... in=... out=... saved=...
+       pass=... draw=... preidx=...
+       q=... tri=... strip=... fan=... unexp=...
+       out_tri=... out_idx=...
+       batch_runs=... batch_draws=... batch_vtx=... batch_max=...]
+```
+
+Purpose:
+
+- Confirm whether upstream display-list optimization is actually being applied
+  to the content loaded by heavy scenes.
+- Separate display-list wins from runtime immediate-mode GX draw spam.
+- Decide whether the next optimization should target display-list batching,
+  immediate texture-vertex draw merging, or game-level particle/grass culling.
+
+Build validation:
+
+```sh
+docker run --rm -v "$PWD:/work" dusklight-portmaster-aarch64-focal-sdl2shim \
+  bash -lc 'cd /work/build/portmaster-aarch64-focal-sdl2shim; cmake --build . --target dusklight -j$(nproc)'
+```
+
+Result:
+
+```text
+Compile/link passed.
+```
+
+Next test:
+
+```text
+DUSKLIGHT_PORTMASTER_GX_STATS=1
+```
+
+Run the same heavy village route and compare `dl_opt[...]` against
+`gx_prim[...]`, `gx_merge[...]`, `gx_batch[...]`, and `gx_reuse[...]`.

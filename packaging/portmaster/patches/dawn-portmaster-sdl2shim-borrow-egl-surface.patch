@@ -8,7 +8,7 @@
  #include <cstdint>
  #include <utility>
  
-@@ -41,6 +42,102 @@
+@@ -41,6 +42,129 @@
  
  namespace dawn::native::opengl {
  
@@ -25,11 +25,15 @@
 +    void* glMakeCurrent;
 +    void* glSwapWindow;
 +    void* eglMakeCurrent;
++    void* eglContext;
++    uint32_t flags;
++    uint32_t drawableWidth;
++    uint32_t drawableHeight;
++    uint32_t reserved;
 +};
 +
 +constexpr uint32_t PortmasterSdl2ShimEglSurfaceMagic = 0x44533245;  // DS2E
-+constexpr uint32_t PortmasterSdl2ShimEglSurfaceVersion = 1;
-+
++constexpr uint32_t PortmasterSdl2ShimEglSurfaceVersion = 2;
 +uintptr_t PortmasterParsePointerEnv(const char* name) {
 +    const char* value = std::getenv(name);
 +    if (value == nullptr || value[0] == '\0') {
@@ -40,12 +44,27 @@
 +
 +bool PortmasterIsValidSdl2ShimSurface(PortmasterSdl2ShimEglSurface* info) {
 +    return info != nullptr && info->magic == PortmasterSdl2ShimEglSurfaceMagic &&
-+           info->version == PortmasterSdl2ShimEglSurfaceVersion && info->eglSurface != nullptr;
++           info->version >= 1 && info->version <= PortmasterSdl2ShimEglSurfaceVersion &&
++           info->eglSurface != nullptr;
 +}
 +
 +bool PortmasterSdl2ShimSwapPresentEnabled() {
 +    const char* value = std::getenv("DUSKLIGHT_PORTMASTER_SDL2SHIM_SWAP_PRESENT");
 +    return value == nullptr || (value[0] != '\0' && value[0] != '0');
++}
++
++EGLint PortmasterSdl2ShimWidthOrDefault(PortmasterSdl2ShimEglSurface* info, uint32_t fallback) {
++    if (info != nullptr && info->version >= 2 && info->drawableWidth > 0) {
++        return static_cast<EGLint>(info->drawableWidth);
++    }
++    return static_cast<EGLint>(fallback);
++}
++
++EGLint PortmasterSdl2ShimHeightOrDefault(PortmasterSdl2ShimEglSurface* info, uint32_t fallback) {
++    if (info != nullptr && info->version >= 2 && info->drawableHeight > 0) {
++        return static_cast<EGLint>(info->drawableHeight);
++    }
++    return static_cast<EGLint>(fallback);
 +}
 +
 +EGLDisplay PortmasterSdl2ShimDisplayOrDefault(PortmasterSdl2ShimEglSurface* info,
@@ -82,13 +101,19 @@
 +    }
 +    using MakeCurrentFn = int (*)(void*, void*);
 +    using EglMakeCurrentFn = unsigned int (*)(void*, void*, void*, void*);
++    void* eglContext = info->version >= 2 && info->eglContext != nullptr ? info->eglContext : info->sdl2Context;
 +    if (info->glMakeCurrent != nullptr && info->sdl2Window != nullptr && info->sdl2Context != nullptr) {
-+        reinterpret_cast<MakeCurrentFn>(info->glMakeCurrent)(info->sdl2Window, info->sdl2Context);
++        if (reinterpret_cast<MakeCurrentFn>(info->glMakeCurrent)(info->sdl2Window, info->sdl2Context) != 0) {
++            return false;
++        }
++        return true;
 +    }
 +    if (info->eglMakeCurrent != nullptr && info->eglDisplay != nullptr && info->eglSurface != nullptr &&
-+        info->sdl2Context != nullptr) {
-+        reinterpret_cast<EglMakeCurrentFn>(info->eglMakeCurrent)(info->eglDisplay, info->eglSurface,
-+                                                                 info->eglSurface, info->sdl2Context);
++        eglContext != nullptr) {
++        if (!reinterpret_cast<EglMakeCurrentFn>(info->eglMakeCurrent)(info->eglDisplay, info->eglSurface,
++                                                                      info->eglSurface, eglContext)) {
++            return false;
++        }
 +    }
 +    return true;
 +}
@@ -98,7 +123,9 @@
 +        return false;
 +    }
 +    using SwapWindowFn = void (*)(void*);
-+    PortmasterMakeCurrentSdl2Shim(info);
++    if (!PortmasterMakeCurrentSdl2Shim(info)) {
++        return false;
++    }
 +    if (info->glSwapWindow == nullptr || info->sdl2Window == nullptr) {
 +        return false;
 +    }
@@ -147,8 +174,8 @@
 +            // Some PortMaster firmware SDL2 backends expose an EGLSurface that is valid for
 +            // make-current/swap, but rejects eglQuerySurface from this Dawn path. The WebGPU
 +            // swapchain already owns the configured present extent, so use that for the blit.
-+            surfaceWidth = static_cast<EGLint>(GetWidth());
-+            surfaceHeight = static_cast<EGLint>(GetHeight());
++            surfaceWidth = PortmasterSdl2ShimWidthOrDefault(portmasterSurface, GetWidth());
++            surfaceHeight = PortmasterSdl2ShimHeightOrDefault(portmasterSurface, GetHeight());
 +        } else {
 +            DAWN_TRY(CheckEGL(egl, egl.QuerySurface(display, mEGLSurface, EGL_WIDTH, &surfaceWidth),
 +                              "getting surface width"));

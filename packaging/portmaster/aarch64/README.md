@@ -20,12 +20,13 @@ transient and do not permanently rewrite the user's config.
 Graphics surface/display selection is controlled with:
 
 ```sh
-DUSKLIGHT_PM_GRAPHICS_MODE=dawn-sdl2shim-native
+DUSKLIGHT_PM_GRAPHICS_MODE=dawn-sdl2shim-owned
 ```
 
 Supported values:
 
-- `dawn-sdl2shim-native`: use the bundled SDL3 shim over the firmware SDL2 backend, pass a structured SDL2/EGL surface handle table into Dawn, and present through SDL2's swap hook. This is the current fast compatibility-test path.
+- `dawn-sdl2shim-owned`: use the bundled SDL3 shim over the firmware SDL2 backend, publish SDL2-owned EGL display/surface/context/drawable metadata to Dawn, and present through SDL2's swap hook. This is the current fast compatibility-test path.
+- `dawn-sdl2shim-native`: alpha10-style SDL2-shim path. It borrows SDL2's `EGLSurface` into Dawn and presents through SDL2's swap hook, but has less explicit EGL context/drawable metadata than `dawn-sdl2shim-owned`.
 - `dawn-sdl2shim`: slower alpha7 compatibility path. Dawn renders offscreen without a WebGPU swapchain surface, then Aurora reads back the frame and presents it through an SDL2-owned GLES context.
 - `dawn-sdl2shim-borrow`: legacy SDL2-shim mode that borrows SDL2's `EGLSurface` into Dawn but does not use the SDL swap hook. Keep for A/B testing only.
 - `dawn-sdl2shim-borrow-sdlswap`: alpha6-style SDL2-shim mode that borrows SDL2's `EGLSurface` into Dawn and calls SDL's swap function. Keep for A/B testing only.
@@ -38,7 +39,7 @@ Supported values:
 - `diag`: write platform diagnostics to `log.txt` and exit without launching the game.
 
 For older devices that fail with `No supported adapters`, ask testers to run
-`diag` first and then try `dawn-sdl2shim-native`, then `dawn-sdl2shim`. Use `dawn-sdl`, `dawn-wayland` or
+`diag` first and then try `dawn-sdl2shim-owned`, then `dawn-sdl2shim-native`, then `dawn-sdl2shim`. Use `dawn-sdl`, `dawn-wayland` or
 `dawn-x11` only if their firmware provides a display server, and `dawn-kmsdrm`
 only to confirm whether SDL can reach KMSDRM. Keep `dawn-fbdev-sentinel` as the
 playable fallback for firmware where that path is known to work.
