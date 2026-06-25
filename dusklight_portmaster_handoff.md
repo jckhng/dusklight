@@ -1,5 +1,14 @@
 # Dusklight PortMaster / RG35XX H Feasibility Handoff
 
+Current experiment stocktake:
+
+```text
+docs/portmaster-experiment-stocktake.md
+```
+
+Use that document first for the latest graphics-mode, compatibility, and
+dead-end ledger. This handoff keeps the longer historical investigation trail.
+
 ## Goal
 
 Investigate whether `TwilitRealm/dusklight` can be ported to PortMaster, specifically for RG35XX H / muOS-class Linux handhelds.

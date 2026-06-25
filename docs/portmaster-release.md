@@ -56,18 +56,25 @@ Do not distribute packages built with `--assets-dir`.
 
 ## What The Docker Build Does
 
-The Docker path is the supported build path for this port. It:
+The Docker path is the supported build path for this port. The current
+compatibility release should use the focal SDL2-shim builder:
+
+```sh
+scripts/portmaster/build_docker_aarch64_focal_sdl2shim_bundle.sh \
+  --out-dir artifacts/portmaster-release
+```
+
+That build path:
 
 - cross-builds Dusklight for Linux aarch64
 - source-builds Dawn with OpenGLES enabled
-- applies `packaging/portmaster/patches/dawn-portmaster-fbdev-surface.patch`
+- applies the PortMaster Dawn/OpenGLES patches under `packaging/portmaster/patches/`
 - bundles SDL3, Dawn, and nod shared libraries into `dusklight/lib.aarch64`
 - stages the PortMaster launcher and resources
 - emits `Dusklight-aarch64-portmaster.zip`
 
-The Dawn fbdev surface change is not a submodule commit. It is intentionally
-stored as a patch and applied to CMake's generated Dawn source tree during the
-Docker build.
+The Dawn SDL2-shim/fbdev surface changes are intentionally stored as patches and
+applied to CMake's generated Dawn source tree during the Docker build.
 
 ## Runtime Layout
 
@@ -158,8 +165,9 @@ images.
 
 ## Current Control Mapping
 
-The package uses native SDL gamepad input. It does not start `gptokeyb` by
-default.
+The package uses native SDL gamepad input for gameplay. The launcher attempts to
+start `gptokeyb2` when PortMaster provides it so testers have a Start/Select
+quit combo even when the game UI is broken.
 
 For `muOS-Keys`, the bundled SDL mapping is:
 
@@ -193,4 +201,6 @@ Known caveats:
 - safe pacing is a playability compromise
 - texture-backed vertex fetch is slower than a true vertex-buffer path
 - the current package is verified mainly on RG35XX H / muOS / Mali-G31
+- Knulli / TrimUI Smart Pro S / PowerVR testers may see z-buffer-looking
+  corruption and strange/cropped Dusklight menu behavior
 - other PortMaster devices may need controller DB or EGL tweaks

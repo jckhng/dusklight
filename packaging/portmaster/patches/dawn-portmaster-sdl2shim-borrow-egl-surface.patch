@@ -8,7 +8,7 @@
  #include <cstdint>
  #include <utility>
  
-@@ -41,6 +42,129 @@
+@@ -41,6 +42,134 @@
  
  namespace dawn::native::opengl {
  
@@ -34,6 +34,7 @@
 +
 +constexpr uint32_t PortmasterSdl2ShimEglSurfaceMagic = 0x44533245;  // DS2E
 +constexpr uint32_t PortmasterSdl2ShimEglSurfaceVersion = 2;
++constexpr uint32_t PortmasterSdl2ShimFlagDawnContextPresent = 1u << 2;
 +uintptr_t PortmasterParsePointerEnv(const char* name) {
 +    const char* value = std::getenv(name);
 +    if (value == nullptr || value[0] == '\0') {
@@ -51,6 +52,10 @@
 +bool PortmasterSdl2ShimSwapPresentEnabled() {
 +    const char* value = std::getenv("DUSKLIGHT_PORTMASTER_SDL2SHIM_SWAP_PRESENT");
 +    return value == nullptr || (value[0] != '\0' && value[0] != '0');
++}
++
++bool PortmasterSdl2ShimDawnContextPresent(PortmasterSdl2ShimEglSurface* info) {
++    return info != nullptr && (info->flags & PortmasterSdl2ShimFlagDawnContextPresent) != 0;
 +}
 +
 +EGLint PortmasterSdl2ShimWidthOrDefault(PortmasterSdl2ShimEglSurface* info, uint32_t fallback) {
@@ -123,7 +128,7 @@
 +        return false;
 +    }
 +    using SwapWindowFn = void (*)(void*);
-+    if (!PortmasterMakeCurrentSdl2Shim(info)) {
++    if (!PortmasterSdl2ShimDawnContextPresent(info) && !PortmasterMakeCurrentSdl2Shim(info)) {
 +        return false;
 +    }
 +    if (info->glSwapWindow == nullptr || info->sdl2Window == nullptr) {
@@ -161,7 +166,7 @@
 -    {
 +    auto blitToSurface = [&]() -> MaybeError {
          auto surfaceCurrent = device->GetContext()->SetCurrentSurfaceScope(mEGLSurface);
-+        if (portmasterSurface != nullptr) {
++        if (portmasterSurface != nullptr && !PortmasterSdl2ShimDawnContextPresent(portmasterSurface)) {
 +            PortmasterMakeCurrentSdl2Shim(portmasterSurface);
 +        }
          EGLint surfaceWidth;

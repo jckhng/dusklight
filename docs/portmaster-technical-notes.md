@@ -4,6 +4,9 @@ This document records the local PortMaster test-port changes and why they exist.
 It is not an upstream design document and should be treated as a fail-fast
 engineering log for low-power Linux handhelds.
 
+For the current experiment ledger, including failed graphics modes and device
+outcomes, see `docs/portmaster-experiment-stocktake.md`.
+
 ## Target
 
 The current package targets PortMaster-style aarch64 Linux handhelds, with the
@@ -53,22 +56,22 @@ at lower resolutions it was still a major frame-time cost.
 The current compatibility-test package defaults to the bmdhacks SDL2 backend:
 
 ```text
-DUSKLIGHT_PM_GRAPHICS_MODE=dawn-sdl2shim
+DUSKLIGHT_PM_GRAPHICS_MODE=dawn-sdl2shim-owned
 SDL_VIDEODRIVER=sdl2
-DUSKLIGHT_PORTMASTER_NO_SURFACE=1
-DUSKLIGHT_PORTMASTER_SDL2SHIM_EXTERNAL_PRESENT=1
+DUSKLIGHT_PORTMASTER_SDL2SHIM_EGL_SURFACE=1
+DUSKLIGHT_PORTMASTER_SDL2SHIM_OWNED_EGL=1
+DUSKLIGHT_PORTMASTER_SDL2SHIM_SWAP_PRESENT=1
+DUSKLIGHT_PORTMASTER_FORCE_VERTEX_TEXTURE=1
 ```
 
-In this mode Dawn does not borrow the SDL2 `EGLSurface` as a WebGPU swapchain
-surface. Aurora renders offscreen through Dawn, reads back the final present
-texture, uploads it to an SDL2-owned GLES texture, draws a fullscreen quad, and
-calls `SDL_GL_SwapWindow`. This is slower than a true GPU-to-GPU present path,
-but it is designed to avoid the `EGL_BAD_SURFACE` failures seen when Dawn tried
-to treat the SDL2-owned surface as its own swapchain surface.
+In this mode the bmdhacks SDL3 shim delegates video to the firmware SDL2
+backend, exposes SDL2-owned EGL metadata to Aurora/Dawn, and presents through
+the SDL swap hook. This is the current fastest muOS path and the current best
+compatibility-test path.
 
-The older fbdev sentinel and SDL2 borrowed-surface modes remain available as
-fallback/A-B paths. They are useful for regression isolation, but they should
-not be described as the preferred compatibility direction.
+The older fbdev sentinel, no-surface/readback, and borrowed-surface modes remain
+available as fallback/A-B paths. They are useful for regression isolation, but
+they should not be described as the preferred compatibility direction.
 
 ## GLES Vertex Limitation
 
@@ -100,19 +103,27 @@ layout generically.
 The PortMaster launcher currently uses conservative low-end settings:
 
 ```text
+DUSKLIGHT_PM_GRAPHICS_MODE=dawn-sdl2shim-owned
 DUSKLIGHT_PORTMASTER_RENDER_WIDTH=320
 DUSKLIGHT_PORTMASTER_RENDER_HEIGHT=240
 DUSKLIGHT_PORTMASTER_LOW_SPEC=1
-DUSKLIGHT_PORTMASTER_EGL_FBDEV_SURFACE=1
+DUSKLIGHT_PORTMASTER_SDL2SHIM_EGL_SURFACE=1
+DUSKLIGHT_PORTMASTER_SDL2SHIM_OWNED_EGL=1
+DUSKLIGHT_PORTMASTER_SDL2SHIM_SWAP_PRESENT=1
+DUSKLIGHT_PORTMASTER_FORCE_VERTEX_TEXTURE=1
 DUSKLIGHT_PORTMASTER_NOINDEX_TRIANGLES=1
 DUSKLIGHT_PORTMASTER_STRIP_TOPOLOGY=1
 DUSKLIGHT_PORTMASTER_BATCH_STRIPS=1
 DUSKLIGHT_PORTMASTER_BATCH_QUADS=1
+DUSKLIGHT_PORTMASTER_BATCH_REUSE_CACHE=1
 DUSKLIGHT_PORTMASTER_DISABLE_DEPTH_PEEK=1
 DUSKLIGHT_PORTMASTER_DRAW_SKIP=0
+DUSKLIGHT_PORTMASTER_DISABLE_GRASS_DRAW=1
+DUSKLIGHT_PORTMASTER_DISABLE_SHADOW_DRAW=1
+DUSKLIGHT_PORTMASTER_DISABLE_WEATHER_DRAW=1
 DUSKLIGHT_PORTMASTER_SAFE_PACING_FPS=30
 DUSKLIGHT_PORTMASTER_SAFE_PACING_MAX_TICKS=4
-SDL_VIDEODRIVER=offscreen
+SDL_VIDEODRIVER=sdl2
 ```
 
 The 320x240 choice is deliberate. Lower resolutions helped speed, but made UI
