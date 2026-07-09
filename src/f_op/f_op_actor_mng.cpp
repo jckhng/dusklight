@@ -27,6 +27,7 @@
 #include "f_op/f_op_camera_mng.h"
 #include "f_op/f_op_scene_mng.h"
 #include "m_Do/m_Do_lib.h"
+#include <cstdlib>
 #include <cstring>
 
 #define MAKE_ITEM_PARAMS(itemNo, itemBitNo, param_2, param_3)                                      \
@@ -1035,59 +1036,83 @@ s32 fopAcM_cullingCheck(fopAc_ac_c const* i_actor) {
         mtx_p = concat_mtx;
     }
 
+    static const f32 portmaster_draw_distance_scale = [] {
+        const char* value = std::getenv("DUSKLIGHT_PORTMASTER_DRAW_DISTANCE_SCALE");
+        if (value == NULL || value[0] == '\0') {
+            return 1.0f;
+        }
+
+        char* end = NULL;
+        f32 parsed = std::strtof(value, &end);
+        if (end == value || parsed <= 0.0f) {
+            OS_REPORT("Ignoring invalid DUSKLIGHT_PORTMASTER_DRAW_DISTANCE_SCALE=%s\n", value);
+            return 1.0f;
+        }
+
+        if (parsed < 0.35f) {
+            OS_REPORT("Clamping DUSKLIGHT_PORTMASTER_DRAW_DISTANCE_SCALE=%s to 0.35\n", value);
+            parsed = 0.35f;
+        } else if (parsed > 1.0f) {
+            OS_REPORT("Clamping DUSKLIGHT_PORTMASTER_DRAW_DISTANCE_SCALE=%s to 1.00\n", value);
+            parsed = 1.0f;
+        }
+
+        if (parsed < 1.0f) {
+            OS_REPORT("PortMaster draw distance scale enabled: %.2f (disabled during events)\n", parsed);
+        }
+
+        return parsed;
+    }();
+
+    const bool event_running = dComIfGp_event_runCheck();
+    const bool has_cullsize_far = fopAcM_getCullSizeFar(i_actor) > 0.0f;
+    const f32 portmaster_far_scale = event_running ? 1.0f : portmaster_draw_distance_scale;
+
     f32 cullsize_far = fopAcM_getCullSizeFar(i_actor);
-    if (dComIfGp_event_runCheck()) {
+    if (event_running) {
         cullsize_far *= dComIfGp_event_getCullRate();
     }
 
+    const f32 effective_far_scale = (has_cullsize_far ? cullsize_far : 1.0f) * portmaster_far_scale;
+
+    const auto clip_box = [&](const Vec* max, const Vec* min) -> u32 {
+        if (effective_far_scale != 1.0f) {
+            mDoLib_clipper::changeFar(effective_far_scale * mDoLib_clipper::getFar());
+            u32 ret = mDoLib_clipper::clip(mtx_p, max, min);
+            mDoLib_clipper::resetFar();
+            return ret;
+        }
+
+        return mDoLib_clipper::clip(mtx_p, max, min);
+    };
+
+    const auto clip_sphere = [&](Vec center, f32 radius) -> u32 {
+        if (effective_far_scale != 1.0f) {
+            mDoLib_clipper::changeFar(effective_far_scale * mDoLib_clipper::getFar());
+            u32 ret = mDoLib_clipper::clip(mtx_p, center, radius);
+            mDoLib_clipper::resetFar();
+            return ret;
+        }
+
+        return mDoLib_clipper::clip(mtx_p, center, radius);
+    };
+
     if (fopAcM_CULLSIZE_IS_BOX(fopAcM_GetCullSize(i_actor))) {
         if (fopAcM_GetCullSize(i_actor) == fopAc_CULLBOX_CUSTOM_e) {
-            if (fopAcM_getCullSizeFar(i_actor) > 0.0f) {
-                mDoLib_clipper::changeFar(cullsize_far * mDoLib_clipper::getFar());
-                u32 ret =
-                    mDoLib_clipper::clip(mtx_p, &i_actor->cull.box.max, &i_actor->cull.box.min);
-                mDoLib_clipper::resetFar();
-                return ret;
-            }
-
-            return mDoLib_clipper::clip(mtx_p, &i_actor->cull.box.max, &i_actor->cull.box.min);
+            return clip_box(&i_actor->cull.box.max, &i_actor->cull.box.min);
         }
 
         cull_box* box = &l_cullSizeBox[fopAcM_CULLSIZE_IDX(fopAcM_GetCullSize(i_actor))];
-
-        if (fopAcM_getCullSizeFar(i_actor) > 0.0f) {
-            mDoLib_clipper::changeFar(cullsize_far * mDoLib_clipper::getFar());
-            u32 ret = mDoLib_clipper::clip(mtx_p, &box->max, &box->min);
-            mDoLib_clipper::resetFar();
-            return ret;
-        }
-
-        return mDoLib_clipper::clip(mtx_p, &box->max, &box->min);
+        return clip_box(&box->max, &box->min);
     }
 
     if (fopAcM_GetCullSize(i_actor) == fopAc_CULLSPHERE_CUSTOM_e) {
-        if (fopAcM_getCullSizeFar(i_actor) > 0.0f) {
-            mDoLib_clipper::changeFar(cullsize_far * mDoLib_clipper::getFar());
-            u32 ret = mDoLib_clipper::clip(mtx_p, fopAcM_getCullSizeSphereCenter(i_actor),
-                                           fopAcM_getCullSizeSphereR(i_actor));
-            mDoLib_clipper::resetFar();
-            return ret;
-        }
-
-        return mDoLib_clipper::clip(mtx_p, fopAcM_getCullSizeSphereCenter(i_actor),
-                                    fopAcM_getCullSizeSphereR(i_actor));
+        return clip_sphere(fopAcM_getCullSizeSphereCenter(i_actor),
+                           fopAcM_getCullSizeSphereR(i_actor));
     }
 
     cull_sphere* sphere = &l_cullSizeSphere[fopAcM_CULLSIZE_Q_IDX(fopAcM_GetCullSize(i_actor))];
-
-    if (fopAcM_getCullSizeFar(i_actor) > 0.0f) {
-        mDoLib_clipper::changeFar(cullsize_far * mDoLib_clipper::getFar());
-        u32 ret = mDoLib_clipper::clip(mtx_p, sphere->center, sphere->radius);
-        mDoLib_clipper::resetFar();
-        return ret;
-    }
-
-    return mDoLib_clipper::clip(mtx_p, sphere->center, sphere->radius);
+    return clip_sphere(sphere->center, sphere->radius);
 }
 
 void* event_second_actor(u16 i_flag) {

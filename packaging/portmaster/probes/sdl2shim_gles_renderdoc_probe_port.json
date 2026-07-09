@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "name": "sdl2shim-gles-renderdoc-probe",
+  "items": [
+    "sdl2shim-gles-renderdoc-probe.sh",
+    "sdl2shim-gles-renderdoc-probe/"
+  ],
+  "attr": {
+    "title": "SDL2 Shim GLES RenderDoc Probe",
+    "desc": "PortMaster diagnostic for bmdhacks SDL2-backend OpenGLES presentation and RenderDoc capture.",
+    "inst": "Launch from PortMaster. It runs a short GLES triangle/texture test, requests a RenderDoc capture, writes log.txt, then exits.",
+    "genres": [
+      "utility"
+    ],
+    "porter": [
+      "local"
+    ],
+    "runtime": "blank",
+    "arch": [
+      "aarch64"
+    ]
+  }
+}

@@ -17,7 +17,10 @@
 #include "f_pc/f_pc_manager.h"
 #include "f_pc/f_pc_debug_sv.h"
 #include "c/c_dylink.h"
+#include "dusk/logging.h"
 #include "m_Do/m_Do_printf.h"
+
+#include <cstdlib>
 
 #if DEBUG
 class print_error_check_c {
@@ -212,9 +215,215 @@ BOOL fopAc_IsActor(void* i_actor) {
 
 u32 fopAc_ac_c::stopStatus;
 
+namespace {
+
+struct PortmasterActorStatsEntry {
+    s16 profName = -1;
+    s8 argument = 0;
+    u32 attempts = 0;
+    u32 drawn = 0;
+    u32 culled = 0;
+    u32 noDraw = 0;
+    u32 stopped = 0;
+};
+
+static PortmasterActorStatsEntry s_portmasterActorStats[256];
+static u32 s_portmasterActorStatsOverflow = 0;
+static u32 s_portmasterActorStatsTotalAttempts = 0;
+static u32 s_portmasterActorStatsTotalDrawn = 0;
+static u32 s_portmasterActorStatsTotalCulled = 0;
+static u32 s_portmasterActorStatsTotalNoDraw = 0;
+static u32 s_portmasterActorStatsTotalStopped = 0;
+static OSTick s_portmasterActorStatsLastLogTick = 0;
+static bool s_portmasterActorStatsAnnounced = false;
+
+static bool portmaster_actor_stats_enabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("DUSKLIGHT_PORTMASTER_ACTOR_STATS");
+        return value != NULL && value[0] != '\0' && value[0] != '0';
+    }();
+    return enabled;
+}
+
+static bool portmaster_village_clutter_cull_enabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("DUSKLIGHT_PORTMASTER_CULL_VILLAGE_CLUTTER");
+        return value != NULL && value[0] != '\0' && value[0] != '0';
+    }();
+    return enabled;
+}
+
+static bool portmaster_should_cull_village_clutter(fopAc_ac_c* actor) {
+    if (!portmaster_village_clutter_cull_enabled() || dComIfGp_event_runCheck()) {
+        return false;
+    }
+
+    switch (fopAcM_GetProfName(actor)) {
+    case fpcNm_ITEM_e:
+    case fpcNm_NPC_FISH_e:
+    case fpcNm_Obj_Yobikusa_e:
+    case fpcNm_Obj_OnCloth_e:
+    case fpcNm_Obj_Laundry_e:
+    case fpcNm_OBJ_PUMPKIN_e:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static PortmasterActorStatsEntry* portmaster_actor_stats_entry(fopAc_ac_c* actor) {
+    const s16 profName = fopAcM_GetProfName(actor);
+    const s8 argument = actor->argument;
+    PortmasterActorStatsEntry* empty = NULL;
+
+    for (PortmasterActorStatsEntry& entry : s_portmasterActorStats) {
+        if (entry.profName == profName && entry.argument == argument) {
+            return &entry;
+        }
+        if (entry.profName < 0 && empty == NULL) {
+            empty = &entry;
+        }
+    }
+
+    if (empty != NULL) {
+        empty->profName = profName;
+        empty->argument = argument;
+        return empty;
+    }
+
+    ++s_portmasterActorStatsOverflow;
+    return NULL;
+}
+
+enum class PortmasterActorDrawResult {
+    Drawn,
+    Culled,
+    NoDraw,
+    Stopped,
+};
+
+static void portmaster_note_actor_draw(fopAc_ac_c* actor, PortmasterActorDrawResult result) {
+    if (!portmaster_actor_stats_enabled()) {
+        return;
+    }
+
+    if (!s_portmasterActorStatsAnnounced) {
+        s_portmasterActorStatsAnnounced = true;
+        DuskLog.info("PortMaster actor_stats enabled in fopAc_Draw");
+    }
+
+    ++s_portmasterActorStatsTotalAttempts;
+    PortmasterActorStatsEntry* entry = portmaster_actor_stats_entry(actor);
+    if (entry != NULL) {
+        ++entry->attempts;
+    }
+
+    switch (result) {
+    case PortmasterActorDrawResult::Drawn:
+        ++s_portmasterActorStatsTotalDrawn;
+        if (entry != NULL) {
+            ++entry->drawn;
+        }
+        break;
+    case PortmasterActorDrawResult::Culled:
+        ++s_portmasterActorStatsTotalCulled;
+        if (entry != NULL) {
+            ++entry->culled;
+        }
+        break;
+    case PortmasterActorDrawResult::NoDraw:
+        ++s_portmasterActorStatsTotalNoDraw;
+        if (entry != NULL) {
+            ++entry->noDraw;
+        }
+        break;
+    case PortmasterActorDrawResult::Stopped:
+        ++s_portmasterActorStatsTotalStopped;
+        if (entry != NULL) {
+            ++entry->stopped;
+        }
+        break;
+    }
+}
+
+static const char* portmaster_actor_stats_name(s16 profName, s8 argument) {
+    for (const PortmasterActorStatsEntry& entry : s_portmasterActorStats) {
+        if (entry.profName == profName && entry.argument == argument) {
+            const char* name = dStage_getName2(profName, argument);
+            return name != NULL ? name : "UNKNOWN";
+        }
+    }
+    return "UNKNOWN";
+}
+
+static void portmaster_log_actor_stats_top(const char* label, u32 PortmasterActorStatsEntry::*field) {
+    const PortmasterActorStatsEntry* top[8] = {};
+
+    for (const PortmasterActorStatsEntry& entry : s_portmasterActorStats) {
+        if (entry.profName < 0 || entry.*field == 0) {
+            continue;
+        }
+
+        for (int i = 0; i < 8; ++i) {
+            if (top[i] == NULL || entry.*field > top[i]->*field) {
+                for (int j = 7; j > i; --j) {
+                    top[j] = top[j - 1];
+                }
+                top[i] = &entry;
+                break;
+            }
+        }
+    }
+
+    char line[512];
+    int used = snprintf(line, sizeof(line), "PortMaster actor_stats_top[%s]", label);
+    for (const PortmasterActorStatsEntry* entry : top) {
+        if (entry == NULL || used >= (int)sizeof(line)) {
+            break;
+        }
+        used += snprintf(line + used, sizeof(line) - used, " %s:%u",
+                         portmaster_actor_stats_name(entry->profName, entry->argument), entry->*field);
+    }
+    DuskLog.info("{}", line);
+}
+
+static void portmaster_maybe_log_actor_stats() {
+    if (!portmaster_actor_stats_enabled()) {
+        return;
+    }
+
+    const OSTick now = OSGetTick();
+    if (s_portmasterActorStatsLastLogTick != 0 &&
+        OSTicksToMicroseconds(now - s_portmasterActorStatsLastLogTick) < 5000000) {
+        return;
+    }
+    s_portmasterActorStatsLastLogTick = now;
+
+    DuskLog.info("PortMaster actor_stats attempts={} drawn={} culled={} nodraw={} stopped={} overflow={}",
+                 s_portmasterActorStatsTotalAttempts, s_portmasterActorStatsTotalDrawn,
+                 s_portmasterActorStatsTotalCulled, s_portmasterActorStatsTotalNoDraw,
+                 s_portmasterActorStatsTotalStopped, s_portmasterActorStatsOverflow);
+    portmaster_log_actor_stats_top("drawn", &PortmasterActorStatsEntry::drawn);
+    portmaster_log_actor_stats_top("culled", &PortmasterActorStatsEntry::culled);
+    portmaster_log_actor_stats_top("nodraw", &PortmasterActorStatsEntry::noDraw);
+
+    for (PortmasterActorStatsEntry& entry : s_portmasterActorStats) {
+        entry = PortmasterActorStatsEntry{};
+    }
+    s_portmasterActorStatsOverflow = 0;
+    s_portmasterActorStatsTotalAttempts = 0;
+    s_portmasterActorStatsTotalDrawn = 0;
+    s_portmasterActorStatsTotalCulled = 0;
+    s_portmasterActorStatsTotalNoDraw = 0;
+    s_portmasterActorStatsTotalStopped = 0;
+}
+
+}  // namespace
+
 static int fopAc_Draw(void* i_this) {
     fopAc_ac_c* actor = (fopAc_ac_c*)i_this;
     int ret = 1;
+    PortmasterActorDrawResult portmaster_draw_result = PortmasterActorDrawResult::NoDraw;
 
     #if DEBUG
     fapGm_HIO_c::startCpuTimer();
@@ -243,10 +452,15 @@ static int fopAc_Draw(void* i_this) {
 
     if (!dComIfGp_isPauseFlag()) {
         int var_r28 = dComIfGp_event_moveApproval(actor);
-        if ((var_r28 == 2 || (!fopAcM_CheckStatus(actor, fopAc_ac_c::getStopStatus()) &&
-            (!fopAcM_CheckStatus(actor, fopAcStts_CULL_e) || !fopAcM_cullingCheck(actor)))) &&
-            !fopAcM_CheckStatus(actor, fopAcStts_UNK_0x20000000_e | fopAcStts_NODRAW_e))
+        const bool stopped = var_r28 != 2 && fopAcM_CheckStatus(actor, fopAc_ac_c::getStopStatus());
+        const bool culled = var_r28 != 2 && !stopped && fopAcM_CheckStatus(actor, fopAcStts_CULL_e) &&
+                            fopAcM_cullingCheck(actor);
+        const bool noDraw = fopAcM_CheckStatus(actor, fopAcStts_UNK_0x20000000_e | fopAcStts_NODRAW_e);
+        const bool portmasterCull = !stopped && !culled && !noDraw && portmaster_should_cull_village_clutter(actor);
+
+        if ((var_r28 == 2 || (!stopped && !culled && !portmasterCull)) && !noDraw)
         {
+            portmaster_draw_result = PortmasterActorDrawResult::Drawn;
             fopAcM_OffCondition(actor, fopAcCnd_NODRAW_e);
 
             #if DEBUG
@@ -265,11 +479,22 @@ static int fopAc_Draw(void* i_this) {
             }
             #endif
         } else {
+            if (stopped) {
+                portmaster_draw_result = PortmasterActorDrawResult::Stopped;
+            } else if (culled) {
+                portmaster_draw_result = PortmasterActorDrawResult::Culled;
+            } else if (portmasterCull) {
+                portmaster_draw_result = PortmasterActorDrawResult::NoDraw;
+            } else {
+                portmaster_draw_result = PortmasterActorDrawResult::NoDraw;
+            }
             fopAcM_OnCondition(actor, fopAcCnd_NODRAW_e);
         }
 
         fopAcM_OffStatus(actor, fopAcStts_NODRAW_e);
     }
+    portmaster_note_actor_draw(actor, portmaster_draw_result);
+    portmaster_maybe_log_actor_stats();
 
     #if DEBUG
     char message[40];

@@ -134,20 +134,23 @@ static const char* portmaster_safe_pacing_block_reason() {
         return nullptr;
     }
 
+    const bool allowTransitions =
+        portmaster_env_enabled("DUSKLIGHT_PORTMASTER_SAFE_PACING_ALLOW_TRANSITIONS");
+
     base_process_class* playScene = fpcM_SearchByName(fpcNm_PLAY_SCENE_e);
     if (playScene == nullptr) {
         return "not_play_scene";
     }
 
-    if (fopOvlpM_IsPeek()) {
+    if (!allowTransitions && fopOvlpM_IsPeek()) {
         return "overlap_peek";
     }
 
-    if (fopOvlpM_IsDoingReq()) {
+    if (!allowTransitions && fopOvlpM_IsDoingReq()) {
         return "overlap_request";
     }
 
-    if (dComIfGp_isEnableNextStage()) {
+    if (!allowTransitions && dComIfGp_isEnableNextStage()) {
         return "next_stage";
     }
 
@@ -159,12 +162,12 @@ static const char* portmaster_safe_pacing_block_reason() {
         return "play_pause_timer";
     }
 
-    if (mDoGph_gInf_c::isFade() != 0) {
+    if (!allowTransitions && mDoGph_gInf_c::isFade() != 0) {
         return "graphic_fade";
     }
 
     JUTFader* fader = mDoGph_gInf_c::getFader();
-    if (fader != nullptr &&
+    if (!allowTransitions && fader != nullptr &&
         (fader->getStatus() == JUTFader::FadeIn || fader->getStatus() == JUTFader::FadeOut)) {
         return "display_fader";
     }

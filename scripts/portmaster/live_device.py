@@ -135,9 +135,14 @@ def remote_run(args: argparse.Namespace, password: str | None) -> None:
     run_interactive(ssh_cmd(args.host, args.remote_cmd), password)
 
 
+def profile(args: argparse.Namespace, password: str | None) -> None:
+    remote_cmd = f"""duration={int(args.duration)} interval={int(args.interval)}; end=$(( $(date +%s) + duration )); prev_time=$(date +%s); prev_ticks=; echo 'ts pid cpu_pct rss_kb threads mem_avail_kb gpu_freq_hz gpu_util_pct gpu_mem_kb load1'; while [ "$(date +%s)" -lt "$end" ]; do now=$(date +%s); pid=$(pidof dusklight.aarch64 2>/dev/null | awk '{{print $1}}'); cpu=''; rss=''; threads=''; if [ -n "$pid" ] && [ -r "/proc/$pid/stat" ]; then ticks=$(awk '{{print $14+$15}}' "/proc/$pid/stat"); if [ -n "$prev_ticks" ]; then dt=$(( now - prev_time )); [ "$dt" -le 0 ] && dt=1; hz=$(getconf CLK_TCK 2>/dev/null || echo 100); cpu=$(awk -v a="$ticks" -v b="$prev_ticks" -v hz="$hz" -v dt="$dt" 'BEGIN {{ printf "%.1f", ((a-b)/hz/dt)*100.0 }}'); fi; prev_ticks=$ticks; rss=$(awk '/VmRSS:/ {{print $2}}' "/proc/$pid/status" 2>/dev/null); threads=$(awk '/Threads:/ {{print $2}}' "/proc/$pid/status" 2>/dev/null); else prev_ticks=; fi; prev_time=$now; mem=$(awk '/MemAvailable:/ {{print $2}}' /proc/meminfo 2>/dev/null); freq=$(cat /sys/class/devfreq/gpu/cur_freq 2>/dev/null); gpu_dump=$(cat /sys/kernel/debug/sunxi_gpu/dump 2>/dev/null); util=$(printf '%s\\n' "$gpu_dump" | awk -F: '/Utilisation from last show/ {{gsub(/[^0-9.]/,\"\",$2); print $2}}'); gpu_mem=$(awk 'NR==1 {{print $2}}' /sys/kernel/debug/mali0/gpu_memory 2>/dev/null); load1=$(awk '{{print $1}}' /proc/loadavg 2>/dev/null); echo "$now ${{pid:-0}} ${{cpu:-na}} ${{rss:-0}} ${{threads:-0}} ${{mem:-0}} ${{freq:-0}} ${{util:-na}} ${{gpu_mem:-0}} ${{load1:-0}}"; sleep "$interval"; done"""
+    run_interactive(ssh_cmd(args.host, remote_cmd), password)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Deploy and inspect Dusklight on a live PortMaster device")
-    parser.add_argument("--host", required=True, help="Device IP or hostname, for example 192.168.10.131")
+    parser.add_argument("--host", required=True, help="Device IP or hostname")
     parser.add_argument(
         "--stage-dir",
         type=Path,
@@ -167,6 +172,11 @@ def main() -> None:
     run_parser = subparsers.add_parser("run", help="Run a diagnostic command on the device")
     run_parser.add_argument("remote_cmd")
     run_parser.set_defaults(func=remote_run)
+
+    profile_parser = subparsers.add_parser("profile", help="Sample Dusklight CPU/RAM and available GPU counters")
+    profile_parser.add_argument("--duration", type=int, default=60, help="Sampling duration in seconds")
+    profile_parser.add_argument("--interval", type=int, default=2, help="Sampling interval in seconds")
+    profile_parser.set_defaults(func=profile)
 
     args = parser.parse_args()
     args.func(args, args.password)

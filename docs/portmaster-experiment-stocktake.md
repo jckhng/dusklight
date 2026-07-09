@@ -185,6 +185,9 @@ What had limited payoff:
   XF blockers are mostly real matrix/material changes.
 - Lower render resolutions help less than expected in heavy scenes, which means
   CPU/GX submission/upload/state churn often dominates over pure pixel fill.
+- Draw-distance scaling and village-clutter actor culling were tested as
+  low-spec experiments. They worked mechanically, but did not produce enough
+  improvement in heavy village scenes to justify enabling them by default.
 
 Current low-spec culls:
 
@@ -195,6 +198,99 @@ DUSKLIGHT_PORTMASTER_DISABLE_WEATHER_DRAW=1
 ```
 
 These are pragmatic rough-port cuts. They improve headroom but reduce fidelity.
+
+### July 2026 Village Performance Wrap-Up
+
+The RG35XX H / muOS village performance pass should be considered wrapped for
+now.
+
+Instrumentation added during this pass:
+
+```text
+DUSKLIGHT_PORTMASTER_GX_STATS=1
+DUSKLIGHT_PORTMASTER_ACTOR_STATS=1
+DUSKLIGHT_PORTMASTER_PROCESS_DRAW_STATS=1
+```
+
+The process draw profiler now reports both inclusive and exclusive process draw
+time. The useful line is:
+
+```text
+PortMaster process_draw_top[exclusive_usec]
+```
+
+All of these are disabled by default in the PortMaster launcher so release logs
+remain quiet.
+
+Tested performance experiments:
+
+```text
+DUSKLIGHT_PORTMASTER_DRAW_DISTANCE_SCALE=0.70
+DUSKLIGHT_PORTMASTER_DRAW_DISTANCE_SCALE=0.55
+DUSKLIGHT_PORTMASTER_CULL_VILLAGE_CLUTTER=1
+DUSKLIGHT_PORTMASTER_BIND_FULL_INDEX_BUFFER=1
+```
+
+The village clutter cull skipped drawing selected low-importance actors:
+
+```text
+item
+Fish
+Obj_Tbi / Obj_Yobikusa
+Obj_Tie / Obj_OnCloth
+341-1 / Obj_Laundry
+Pumpkin
+```
+
+It was draw-only and disabled during events, so it did not intentionally remove
+actor execution, collision, audio, events, or save behavior.
+
+Representative heavy-village result after cull/profiling:
+
+```text
+fps ~= 5.5
+avg_total_ms ~= 80 ms
+avg_submit_ms ~= 50 ms
+avg_render_encode_ms ~= 7 ms
+avg_fbdev_present_ms = 0
+```
+
+Exclusive draw timing showed there is no single safe leaf actor to delete for a
+large win. `item`, `Pumpkin`, `Fish`, `Bg`, `Obj_Tie`, `Link`, and `kdoor` each
+showed measurable cost, but none was individually large enough to rescue the
+worst scenes. Removing several of them would be visually destructive and still
+unlikely to turn the village into stable 12-15 FPS gameplay.
+
+Conclusion:
+
+- Do not enable draw-distance scaling by default.
+- Do not enable village clutter culling by default.
+- Do not enable full-index-buffer binding by default. It binds the full index
+  buffer once and uses `firstIndex` for texture-vertex draws, but village submit
+  timing stayed in the same broad band.
+- Do not keep expanding broad actor culls unless an explicit ugly low-spec mode
+  is desired.
+- The remaining bottleneck is primarily Dawn/OpenGLES/GX submission and driver
+  synchronization, not presentation and not one obvious game actor.
+- Further meaningful performance work likely requires larger renderer/GX
+  architecture changes, or adaptive pacing/quality work that improves feel
+  rather than raw FPS.
+
+Additional merge finding:
+
+Strict dirty-merge probing compared adjacent draw uniforms while ignoring only
+the `vtx_start` prefix. In village logs, almost all promising dirty-merge
+candidates still had different uniform bytes:
+
+```text
+dirty_probe ... usame=0 udiff=130 could=0
+dirty_probe ... usame=0 udiff=737 could=0
+dirty_probe ... usame=0 udiff=1101 could=0
+```
+
+This means dirty blockers are usually real per-draw state/uniform differences,
+not just harmless dirty flags. Do not implement broad "merge across dirty" logic
+without a narrower proof for a specific state class.
 
 ## Presentation Findings
 
@@ -283,11 +379,10 @@ Short-term compatibility:
 
 Short-term performance:
 
-1. Keep profiling with `DUSKLIGHT_PORTMASTER_GX_STATS=1` on one known heavy
-   village route.
-2. Optimize only where counters show a real blocker: strip/quad merge blockers,
-   index/reuse cache misses, or high GX upload bytes.
-3. Treat low-spec culls as A/B experiments, not guesses.
+Paused. The July 2026 village pass did not find a safe, high-payoff optimization
+beyond the existing batching/pacing work. Do not continue broad profiling or
+random culls for now. Reopen only if there is a new renderer/GX architecture
+change to test, or a specific log points to one isolated high-cost effect.
 
 Long-term durable path:
 
