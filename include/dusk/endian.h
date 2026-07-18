@@ -1,7 +1,7 @@
 #ifndef DOLPHIN_ENDIAN_H
 #define DOLPHIN_ENDIAN_H
 
-#include <bit>
+#include <cstring>
 
 #include "dolphin/types.h"
 #include "dolphin/mtx.h"
@@ -58,7 +58,11 @@ static inline s64 RES_S64(s64 v) {
     return be64s(v);
 }
 static inline f32 RES_F32(f32 v) {
-    return std::bit_cast<f32, s32>(RES_S32(std::bit_cast<s32, f32>(v)));
+    s32 bits;
+    std::memcpy(&bits, &v, sizeof(bits));
+    bits = RES_S32(bits);
+    std::memcpy(&v, &bits, sizeof(v));
+    return v;
 }
 #else
 // On GameCube host-endian == file-endian, these are no-ops (keep as macros to allow compile in

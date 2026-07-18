@@ -6,18 +6,18 @@ struct RoomEntry {
     u8 roomNo;
     std::vector<s16> roomPoints = {};
 
-    constexpr RoomEntry() : roomNo(0) {}
-    constexpr RoomEntry(const RoomEntry& other) = default;
+    RoomEntry() : roomNo(0) {}
+    RoomEntry(const RoomEntry& other) = default;
 
     template <int N>
-    constexpr RoomEntry(const u8 roomNo, const s16 (&points)[N]) :
+    RoomEntry(const u8 roomNo, const s16 (&points)[N]) :
         roomNo(roomNo) {
         for (int i = 0; i < N; i++) {
             roomPoints.push_back(points[i]);
         }
     }
 
-    constexpr RoomEntry(const u8 roomNo) :
+    RoomEntry(const u8 roomNo) :
         roomNo(roomNo) {
         roomPoints.push_back(0);
     }
@@ -28,11 +28,11 @@ struct MapEntry {
     const char* mapFile;
     std::vector<RoomEntry> mapRooms = {};
 
-    constexpr MapEntry() : mapName(nullptr), mapFile(nullptr) {}
-    constexpr MapEntry(const MapEntry& other) = default;
+    MapEntry() : mapName(nullptr), mapFile(nullptr) {}
+    MapEntry(const MapEntry& other) = default;
 
     template <int N>
-    constexpr MapEntry(const char* mapName, const char* mapFile, const RoomEntry (&rooms)[N], const char*) : mapName(mapName),
+    MapEntry(const char* mapName, const char* mapFile, const RoomEntry (&rooms)[N], const char*) : mapName(mapName),
         mapFile(mapFile) {
         for (int i = 0; i < N; i++) {
             mapRooms.push_back(rooms[i]);
@@ -40,14 +40,14 @@ struct MapEntry {
     }
 
     template <int N>
-    constexpr MapEntry(const char* mapName, const char* mapFile, const RoomEntry (&rooms)[N]) :
+    MapEntry(const char* mapName, const char* mapFile, const RoomEntry (&rooms)[N]) :
     mapName(mapName), mapFile(mapFile) {
         for (int i = 0; i < N; i++) {
             mapRooms.push_back(rooms[i]);
         }
     }
 
-    constexpr MapEntry(const char* mapName, const char* mapFile) : mapName(mapName),
+    MapEntry(const char* mapName, const char* mapFile) : mapName(mapName),
                 mapFile(mapFile) {}
 };
 
@@ -56,7 +56,7 @@ struct RegionEntry {
     std::vector<MapEntry> maps = {};
 
     template <int N>
-    constexpr RegionEntry(const char* regionName, const MapEntry (&maps)[N]) : regionName(regionName) {
+    RegionEntry(const char* regionName, const MapEntry (&maps)[N]) : regionName(regionName) {
         for (int i = 0; i < N; i++) {
             this->maps.push_back(maps[i]);
         }

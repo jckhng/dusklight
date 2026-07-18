@@ -1,0 +1,182 @@
+diff --git a/third_party/abseil-cpp/absl/base/config.h b/third_party/abseil-cpp/absl/base/config.h
+--- a/third_party/abseil-cpp/absl/base/config.h
++++ b/third_party/abseil-cpp/absl/base/config.h
+@@ -538,10 +538,10 @@
+ // Checks whether C++20 std::source_location is available.
+ #ifdef ABSL_HAVE_STD_SOURCE_LOCATION
+ #error "ABSL_HAVE_STD_SOURCE_LOCATION cannot be directly set."
+-#elif (defined(__cpp_lib_source_location) &&    \
++#elif !defined(__clang__) && ((defined(__cpp_lib_source_location) &&    \
+        __cpp_lib_source_location >= 201907L) || \
+     (defined(ABSL_INTERNAL_CPLUSPLUS_LANG) &&   \
+-     ABSL_INTERNAL_CPLUSPLUS_LANG >= 202002L)
++     ABSL_INTERNAL_CPLUSPLUS_LANG >= 202002L))
+ #ifdef __has_include
+ #if __has_include(<source_location>)
+ #define ABSL_HAVE_STD_SOURCE_LOCATION 1
+diff --git a/src/tint/utils/containers/vector.h b/src/tint/utils/containers/vector.h
+--- a/src/tint/utils/containers/vector.h
++++ b/src/tint/utils/containers/vector.h
+@@ -1162,7 +1162,7 @@
+ /// Helper for determining the Vector element type (`T`) from the vector's constuctor arguments
+ template <typename... Ts>
+ using VectorCommonType =
+-    tint::internal::VectorCommonType<IsCastable<std::remove_pointer_t<Ts>...>, Ts...>::type;
++    typename tint::internal::VectorCommonType<IsCastable<std::remove_pointer_t<Ts>...>, Ts...>::type;
+ 
+ /// Deduction guide for Vector
+ template <typename... Ts>
+diff --git a/src/tint/lang/core/ir/transform/multiplanar_external_texture.cc b/src/tint/lang/core/ir/transform/multiplanar_external_texture.cc
+--- a/src/tint/lang/core/ir/transform/multiplanar_external_texture.cc
++++ b/src/tint/lang/core/ir/transform/multiplanar_external_texture.cc
+@@ -48,6 +48,9 @@
+     using Ts::operator()...;
+ };
+ 
++template <class... Ts>
++overloaded(Ts...) -> overloaded<Ts...>;
++ using MultiplanarTexture = tint::transform::multiplanar::MultiplanarTexture;
+ using YCBCRTexture = tint::transform::multiplanar::YCBCRTexture;
+ 
+diff --git a/src/tint/lang/core/ir/const_param_validator.cc b/src/tint/lang/core/ir/const_param_validator.cc
+--- a/src/tint/lang/core/ir/const_param_validator.cc
++++ b/src/tint/lang/core/ir/const_param_validator.cc
+@@ -303,7 +303,9 @@
+         uses.Push(std::make_pair(u, input_size));
+     }
+     while (!uses.IsEmpty()) {
+-        auto [use, buffer_size] = uses.Pop();
++        auto popped_use = uses.Pop();
++        auto use = popped_use.first;
++        auto buffer_size = popped_use.second;
+         diag::Diagnostic error;
+         bool errored = tint::Switch(
+             use.instruction,
+diff --git a/src/dawn/common/Sha3.cpp b/src/dawn/common/Sha3.cpp
+--- a/src/dawn/common/Sha3.cpp
++++ b/src/dawn/common/Sha3.cpp
+@@ -325,7 +325,7 @@
+ 
+ // static
+ template <size_t OutputLength>
+-Sha3<OutputLength>::Output Sha3<OutputLength>::Hash(const void* data, size_t size) {
++typename Sha3<OutputLength>::Output Sha3<OutputLength>::Hash(const void* data, size_t size) {
+     Sha3 sha;
+     sha.Update(data, size);
+     return sha.Finalize();
+@@ -333,7 +333,7 @@
+ 
+ // static
+ template <size_t OutputLength>
+-Sha3<OutputLength>::Output Sha3<OutputLength>::Hash(std::span<const std::byte> data) {
++typename Sha3<OutputLength>::Output Sha3<OutputLength>::Hash(std::span<const std::byte> data) {
+     Sha3 sha;
+     sha.Update(data.data(), data.size());
+     return sha.Finalize();
+diff --git a/src/dawn/common/MutexProtected.h b/src/dawn/common/MutexProtected.h
+--- a/src/dawn/common/MutexProtected.h
++++ b/src/dawn/common/MutexProtected.h
+@@ -224,7 +224,7 @@
+     }
+ 
+   protected:
+-    CondVarGuard(T* obj, Traits::MutexType& mutex, std::condition_variable* cv)
++    CondVarGuard(T* obj, typename Traits::MutexType& mutex, std::condition_variable* cv)
+         : mGuard(obj, mutex), mNotifyScope(cv) {}
+ 
+     auto* Get() const { return mGuard.Get(); }
+@@ -356,7 +356,7 @@
+     }
+ 
+   private:
+-    mutable Traits::MutexType mMutex;
++    mutable typename Traits::MutexType mMutex;
+     T mObj;
+ };
+ 
+@@ -440,7 +440,7 @@
+     }
+ 
+   private:
+-    mutable Traits::MutexType mMutex;
++    mutable typename Traits::MutexType mMutex;
+     mutable std::condition_variable mCv;
+     T mObj;
+ };
+diff --git a/src/dawn/common/ityp_vector.h b/src/dawn/common/ityp_vector.h
+--- a/src/dawn/common/ityp_vector.h
++++ b/src/dawn/common/ityp_vector.h
+@@ -89,14 +89,14 @@
+         return Base::data();
+     }
+ 
+-    constexpr Base::reference operator[](Index i) {
++    constexpr typename Base::reference operator[](Index i) {
+         return Base::operator[](checked_cast<size_t>(i));
+     }
+-    constexpr Base::const_reference operator[](Index i) const {
++    constexpr typename Base::const_reference operator[](Index i) const {
+         return Base::operator[](checked_cast<size_t>(i));
+     }
+ 
+-    constexpr Base::reference at(Index i) { return Base::at(checked_cast<size_t>(i)); }
+-    constexpr Base::const_reference at(Index i) const { return Base::at(checked_cast<size_t>(i)); }
++    constexpr typename Base::reference at(Index i) { return Base::at(checked_cast<size_t>(i)); }
++    constexpr typename Base::const_reference at(Index i) const { return Base::at(checked_cast<size_t>(i)); }
+ 
+     constexpr Index size() const { return Index(static_cast<I>(Base::size())); }
+ 
+diff --git a/src/dawn/native/BlobCache.cpp b/src/dawn/native/BlobCache.cpp
+--- a/src/dawn/native/BlobCache.cpp
++++ b/src/dawn/native/BlobCache.cpp
+@@ -178,7 +178,10 @@
+ }
+ 
+ bool BlobCache::ValidateCacheKey(const CacheKey& key) {
+-    return !std::ranges::search(std::span(key), std::as_bytes(std::span(kDawnVersion))).empty();
++    auto keyBytes = std::span(key);
++    auto versionBytes = std::as_bytes(std::span(kDawnVersion));
++    return std::search(keyBytes.begin(), keyBytes.end(), versionBytes.begin(), versionBytes.end()) !=
++           keyBytes.end();
+ }
+ 
+ }  // namespace dawn::native
+diff --git a/src/dawn/native/Queue.cpp b/src/dawn/native/Queue.cpp
+--- a/src/dawn/native/Queue.cpp
++++ b/src/dawn/native/Queue.cpp
+@@ -570,7 +570,9 @@
+                                 texture, texture->GetPinnedUsage());
+             }
+             for (const SyncScopeResourceUsage& scope : usages.renderPasses) {
+-                for (auto [j, texture] : Enumerate(scope.textures)) {
++                for (auto indexedTexture : Enumerate(scope.textures)) {
++                    auto j = indexedTexture.first;
++                    const TextureBase* texture = indexedTexture.second;
+                     if (!texture->HasPinnedUsage()) {
+                         continue;
+                     }
+@@ -586,7 +588,9 @@
+             }
+             for (const ComputePassResourceUsage& compute : usages.computePasses) {
+                 for (const SyncScopeResourceUsage& scope : compute.dispatchUsages) {
+-                    for (auto [j, texture] : Enumerate(scope.textures)) {
++                    for (auto indexedTexture : Enumerate(scope.textures)) {
++                        auto j = indexedTexture.first;
++                        const TextureBase* texture = indexedTexture.second;
+                         if (!texture->HasPinnedUsage()) {
+                             continue;
+                         }
+diff --git a/src/dawn/native/TintUtils.h b/src/dawn/native/TintUtils.h
+--- a/src/dawn/native/TintUtils.h
++++ b/src/dawn/native/TintUtils.h
+@@ -105,7 +105,9 @@
+     for (BindGroupIndex group : layout->GetBindGroupLayoutsMask()) {
+         const BindGroupLayoutInternalBase* bgl = layout->GetBindGroupLayout(group);
+ 
+-        for (const auto& [bindingNumber, apiBindingIndex] : bgl->GetBindingMap()) {
++        for (const auto& bindingEntry : bgl->GetBindingMap()) {
++            auto bindingNumber = bindingEntry.first;
++            auto apiBindingIndex = bindingEntry.second;
+             if (!(bgl->GetAPIBindingInfo(apiBindingIndex).visibility & StageBit(stage))) {
+                 continue;
+             }

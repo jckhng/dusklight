@@ -47,6 +47,14 @@ compile_commands.json
 
 # ISOs
 *.iso
+*.gcm
+*.rvz
+
+# Local PortMaster development data
+artifacts/
+rom/
+reference/
+muOS_*.png
 
 *.ini
 *.controller

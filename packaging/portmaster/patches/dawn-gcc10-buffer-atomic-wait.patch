@@ -1,0 +1,35 @@
+diff --git a/src/dawn/native/Buffer.h b/src/dawn/native/Buffer.h
+--- a/src/dawn/native/Buffer.h
++++ b/src/dawn/native/Buffer.h
+@@ -300,6 +300,8 @@ class BufferBase : public ApiObjectBase {
+     // With those `mState` changes in place, we can guarantee that if GetMappedRange() is
+     // successful, that MapAsync() must have succeeded. We cannot guarantee, however, that Unmap()
+     // did not race with GetMappedRange(), but that is the responsibility of the caller.
+     std::atomic<BufferState> mState = BufferState::Unmapped;
++    mutable std::mutex mStateMutex;
++    std::condition_variable mStateCv;
+ 
+     // A recursive buffer used to implement mappedAtCreation for buffers with non-mappable
+     // usage. It is transiently allocated and released when the mappedAtCreation-buffer is
+diff --git a/src/dawn/native/Buffer.cpp b/src/dawn/native/Buffer.cpp
+--- a/src/dawn/native/Buffer.cpp
++++ b/src/dawn/native/Buffer.cpp
+@@ -325,7 +325,7 @@ class BufferBase::MapAsyncEvent final : public TrackedEvent {
+ 
+         DAWN_CHECK(buffer);
+         MaybeError result = buffer->FinalizeMap(BufferState::Mapped);
+-        buffer->mState.notify_all();
++        buffer->mStateCv.notify_all();
+         if (result.IsError()) {
+             auto error = result.AcquireError();
+             DAWN_CHECK(error->GetType() != InternalErrorType::Validation);
+@@ -932,7 +932,8 @@ MaybeError BufferBase::UnmapInternal(bool forDestroy) {
+         }
+ 
+         // Wait until FinalizeMap() finishes before falling through to a regular unmap.
+-        mState.wait(BufferState::PendingMap, std::memory_order::acquire);
++        std::unique_lock lock(mStateMutex);
++        mStateCv.wait(lock, [&] { return mState.load(std::memory_order::acquire) != BufferState::PendingMap; });
+     }
+ 
+     DAWN_TRY(Unmap(forDestroy));

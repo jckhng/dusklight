@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "name": "dusklight.zip",
+  "items": [
+    "dusklight.sh",
+    "dusklight"
+  ],
+  "items_opt": null,
+  "attr": {
+    "title": "Dusklight",
+    "desc": "Experimental Linux aarch64 PortMaster package for the native Dusklight project.",
+    "inst": "Place a supported Twilight Princess disc image in dusklight/assets. Launch dusklight.sh from PortMaster.",
+    "genres": [
+      "adventure",
+      "action"
+    ],
+    "porter": [
+      "jckhng"
+    ],
+    "image": {},
+    "rtr": false,
+    "runtime": null,
+    "reqs": [],
+    "arch": [
+      "aarch64"
+    ]
+  }
+}

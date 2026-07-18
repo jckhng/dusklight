@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gameList>
+  <game>
+    <path>./dusklight.sh</path>
+    <name>Dusklight</name>
+    <desc>Experimental PortMaster package for the native Dusklight project.</desc>
+    <genre>Adventure</genre>
+    <developer>Twilit Realm contributors</developer>
+    <publisher>Community Port</publisher>
+    <players>1</players>
+  </game>
+</gameList>
